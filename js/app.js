@@ -4,10 +4,12 @@ const $ = id => document.getElementById(id);
 
 const canvas = $("c");
 const ctx = canvas.getContext("2d", { alpha: false });
-
+const statsEl = $("stats");
 let world = null;
 let assets = null;
 let dpr = Math.min(window.devicePixelRatio || 1, 2);
+const sprites = buildSprites();
+const temperatureSprites = buildTemperatureSprites();
 
 function fit() {
 	const W = window.innerWidth, H = window.innerHeight;
@@ -20,9 +22,30 @@ function fit() {
 	else resizeWorld(world, W, H);
 	assets = makeAssets(ctx, world);
 	assets.sprites = sprites;
+	assets.tempSprites = temperatureSprites;
+	updateCountLabel();
 }
 
-const sprites = buildSprites();
+function countForSettings(fillPercent, radius) {
+	const area = world.W * world.H;
+	const estimate = Math.max(1, Math.round((fillPercent / 100) * area / (Math.PI * 1.027 * radius * radius)));
+	return estimate > SPAWN_CAP ? SPAWN_CAP + " max (cap)" : estimate;
+}
+
+function updateCountLabel() {
+	const fill = Number($("fillFraction").value);
+	const radius = Number($("typicalRadius").value);
+	$("countValue").textContent = countForSettings(fill, radius) + " beads at typical size";
+}
+
+function updateStats() {
+	let totalTemp = 0, activeLinks = 0;
+	for (let i = 0; i < world.n; i++) totalTemp += world.temp[i];
+	for (let k = 0; k < world.linkN; k++) if (world.linkK[k] >= 0.04) activeLinks++;
+	const avgTemp = world.n ? totalTemp / world.n : 0;
+	statsEl.textContent = world.n + " BEADS · " + activeLinks + " ACTIVE LINKS · MEAN T " + avgTemp.toFixed(2) + " · " + Math.round(fpsEMA) + " FPS";
+}
+
 fit();
 
 let resizeTimer = 0;
@@ -51,7 +74,7 @@ canvas.addEventListener("pointermove", e => {
 	canvas.style.cursor = hit >= 0 ? "grab" : "default";
 });
 
-function endPointer(e) {
+function endPointer() {
 	pointerUp(world, performance.now());
 	canvas.style.cursor = "default";
 }
@@ -59,15 +82,60 @@ canvas.addEventListener("pointerup", endPointer);
 canvas.addEventListener("pointercancel", endPointer);
 canvas.addEventListener("contextmenu", e => e.preventDefault());
 
+$("heatRate").addEventListener("input", e => {
+	const value = Number(e.target.value);
+	setHeatRate(world, value);
+	$("heatValue").textContent = value.toFixed(2) + "×";
+});
+
+$("sizeResponse").addEventListener("input", e => {
+	const value = Number(e.target.value);
+	setSizeResponse(world, value);
+	$("sizeValue").textContent = (value > 0 ? "+" : "") + value.toFixed(2);
+});
+
+$("fillFraction").addEventListener("input", e => {
+	$("fillValue").textContent = e.target.value + "%";
+	updateCountLabel();
+});
+
+$("typicalRadius").addEventListener("input", e => {
+	$("radiusValue").textContent = e.target.value + " px";
+	updateCountLabel();
+});
+
+$("massScale").addEventListener("input", e => {
+	const value = Number(e.target.value);
+	setMassScale(world, value);
+	$("massValue").textContent = value.toFixed(2) + "×";
+});
+
+function redealFromControls() {
+	setFillFraction(world, Number($("fillFraction").value) / 100);
+	setTypicalRadius(world, Number($("typicalRadius").value));
+	setSizeResponse(world, Number($("sizeResponse").value));
+	setMassScale(world, Number($("massScale").value));
+	spawnBed(world);
+}
+
+$("fillFraction").addEventListener("change", redealFromControls);
+$("typicalRadius").addEventListener("change", redealFromControls);
+$("redeal").addEventListener("click", redealFromControls);
+
+$("viewToggle").addEventListener("click", e => {
+	world.temperatureView = !world.temperatureView;
+	e.currentTarget.setAttribute("aria-pressed", world.temperatureView ? "true" : "false");
+	e.currentTarget.textContent = "Temperature hue: " + (world.temperatureView ? "on" : "off");
+});
+
 window.addEventListener("keydown", e => {
-	if (e.key === "r" || e.key === "R") spawnBed(world);
+	if (e.key === "r" || e.key === "R") redealFromControls();
 	if (e.code === "Space") {
 		e.preventDefault();
 		splash(world);
 	}
 });
 
-const statsEl = $("stats");
 let fpsEMA = 60, statTick = 0;
 let last = performance.now();
 
@@ -82,7 +150,7 @@ function frame(now) {
 	fpsEMA = fpsEMA * 0.95 + (1 / Math.max(dt, 1e-3)) * 0.05;
 	if (++statTick >= 30) {
 		statTick = 0;
-		statsEl.textContent = world.n + " BEADS \u00B7 " + Math.round(fpsEMA) + " FPS";
+		updateStats();
 	}
 }
 requestAnimationFrame(frame);

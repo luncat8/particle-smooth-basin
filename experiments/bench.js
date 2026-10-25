@@ -40,7 +40,7 @@ for (let f = 0; f < FRAMES; f++) {
 const msPerFrame = Number(process.hrtime.bigint() - t0) / 1e6 / FRAMES;
 
 const s = settleStats(world);
-console.log("0.1.0 bench  node=" + process.version + "  " + W + "x" + H);
+console.log("0.2.0 thermal bench  node=" + process.version + "  " + W + "x" + H);
 console.log("n=" + world.n + "  rBar=" + world.rBar.toFixed(1));
 console.log("throughput: " + msPerFrame.toFixed(2) + " ms/frame (" + (1000 / msPerFrame).toFixed(0) + " fps headroom) at " + FRAMES + " frames / 60 s sim");
 console.log("after settle: NaN=" + scanNaN(world) + "  max|v|=" + s.maxV.toFixed(0) + "  mean|v|=" + s.meanV.toFixed(1));

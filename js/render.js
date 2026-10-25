@@ -8,6 +8,7 @@ const SPRITE_SIZE = 96;
 
 const LIGHT_COLORS = ["#8fe0dc", "#a5ecd0", "#f5b8cf", "#c3b4f4", "#f6d9a0", "#bfe3f2"];
 const DEEP_COLORS = ["#4fb6c9", "#6f97dd", "#b58ad6", "#d99a63", "#3fa98a", "#7f7fd0"];
+const TEMP_COLORS = ["#5686f5", "#55aef2", "#4dcbdc", "#57d6ae", "#88d66d", "#c4d45d", "#e8bf55", "#f49a50", "#ef7055", "#e95170"];
 
 const FONT_MONO = "10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
@@ -65,6 +66,12 @@ function buildSprites() {
 	return out;
 }
 
+function buildTemperatureSprites() {
+	const out = [];
+	for (let i = 0; i < TEMP_COLORS.length; i++) out.push(beadSprite(TEMP_COLORS[i]));
+	return out;
+}
+
 /* all frame-invariant fills, rebuilt on resize */
 function makeAssets(ctx, world) {
 	const W = world.W, H = world.H, t = world.tank, waterY = world.waterY;
@@ -91,6 +98,13 @@ function makeAssets(ctx, world) {
 	a.floorGrad = ctx.createLinearGradient(0, t.y1, 0, t.y1 + 26);
 	a.floorGrad.addColorStop(0, "rgba(110,190,215,0.10)");
 	a.floorGrad.addColorStop(1, "rgba(110,190,215,0)");
+
+	a.coldZone = ctx.createLinearGradient(0, 0, 0, H * 0.24);
+	a.coldZone.addColorStop(0, "rgba(74,138,255,0.12)");
+	a.coldZone.addColorStop(1, "rgba(74,138,255,0)");
+	a.hotZone = ctx.createLinearGradient(0, H * 0.76, 0, H);
+	a.hotZone.addColorStop(0, "rgba(255,142,70,0)");
+	a.hotZone.addColorStop(1, "rgba(255,142,70,0.13)");
 
 	return a;
 }
@@ -154,12 +168,36 @@ function render(ctx, world, a) {
 	waterPath(ctx, world);
 	ctx.fillStyle = a.waterGradA;
 	ctx.fill();
+	ctx.fillStyle = a.coldZone;
+	ctx.fillRect(t.x0, 0, t.x1 - t.x0, H * 0.24);
+	ctx.fillStyle = a.hotZone;
+	ctx.fillRect(t.x0, H * 0.76, t.x1 - t.x0, H * 0.24);
 
-	const sprites = a.sprites;
+	const linkStride = world.linkN > 5000 ? 2 : 1;
+	for (let pass = 0; pass < 3; pass++) {
+		ctx.beginPath();
+		for (let k = 0; k < world.linkN; k += linkStride) {
+			const strength = world.linkK[k];
+			const inBand = pass === 0 ? strength >= 0.04 && strength < 0.22
+				: pass === 1 ? strength >= 0.22 && strength < 0.50 : strength >= 0.50;
+			if (!inBand) continue;
+			const i = world.linkA[k], j = world.linkB[k];
+			ctx.moveTo(world.x[i], world.y[i]);
+			ctx.lineTo(world.x[j], world.y[j]);
+		}
+		ctx.strokeStyle = pass === 0 ? "rgba(130,220,230,0.10)" : pass === 1 ? "rgba(160,235,238,0.20)" : "rgba(205,250,245,0.32)";
+		ctx.lineWidth = pass === 2 ? 1.5 : 1;
+		ctx.stroke();
+	}
+
+	const sprites = a.sprites, tempSprites = a.tempSprites;
 	for (let i = 0; i < world.n; i++) {
 		const R = world.r[i] * RENDER_SHRINK;
+		const sprite = world.temperatureView
+			? tempSprites[Math.min(tempSprites.length - 1, (world.temp[i] * tempSprites.length) | 0)]
+			: sprites[world.pal[i]];
 		ctx.globalAlpha = world.alpha[i];
-		ctx.drawImage(sprites[world.pal[i]], world.x[i] - R, world.y[i] - R, R * 2, R * 2);
+		ctx.drawImage(sprite, world.x[i] - R, world.y[i] - R, R * 2, R * 2);
 	}
 	ctx.globalAlpha = 1;
 

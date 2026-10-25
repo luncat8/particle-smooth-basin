@@ -1,16 +1,14 @@
 "use strict";
 
 /* Hydrogel basin physics. Pure JS, no DOM — node can require it
-   (experiments/). Pipeline per substep: forces -> predict -> soft contact
-   relaxation -> velocities derived from positions (PBD, no restitution).
-   The relaxation loop is the seam where freeze links (distance
-   constraints) will be solved — see 0.2-plan.md. */
+   (experiments/). Pipeline per substep: forces and heat -> predict ->
+   contact and thermal-bond relaxation -> velocity derivation. */
 
 const TAU = Math.PI * 2;
 
 const WATER_FRAC = 0.5;		// waterline share of screen height
-const FILL_FRAC = 0.68;		// bead area / water body area at spawn
-const TARGET_PARTICLES = 650;
+const DEFAULT_FILL = 0.50;
+const DEFAULT_RADIUS = 14;
 const SPAWN_CAP = 1500;
 const RHO_WATER = 1;
 const DRAG_AIR = 0.05;		// 1/s
@@ -35,31 +33,37 @@ function createWorld(W, H) {
 		tank: { x0: 0, x1: 0, y0: 0, y1: 0 },
 		waterY: 0,
 		grav: 1850,			// px/s^2, rescaled with screen height
-		rBar: 14, rMax: 18,
+		rBar: DEFAULT_RADIUS, rMax: 24,
+		fillFraction: DEFAULT_FILL, typicalRadius: DEFAULT_RADIUS, massScale: 1,
+		heatRate: 1, sizeResponse: 0, temperatureView: false,
 		n: 0, cap,
 		x: new Float64Array(cap), y: new Float64Array(cap),
 		px: new Float64Array(cap), py: new Float64Array(cap),
 		vx: new Float64Array(cap), vy: new Float64Array(cap),
-		r: new Float64Array(cap), dens: new Float64Array(cap),
+		r: new Float64Array(cap), baseSize: new Float64Array(cap), dens: new Float64Array(cap),
 		invM: new Float64Array(cap), frac: new Float64Array(cap),
+		temp: new Float32Array(cap), heatDelta: new Float32Array(cap),
 		alpha: new Float64Array(cap), pal: new Uint8Array(cap),
 		wave: { n: 0, dx: 10, x0: 0, h: null, vh: null, ld: null, rd: null },
 		head: null, nxt: null, gw: 0, gh: 0,
 		pairA: new Int32Array(cap * 8), pairB: new Int32Array(cap * 8),
 		pairN: 0,
-		pairRF: 1,			// pair scan radius factor; 0.2 widens it for link discovery
+		pairRF: 1.25,		// includes near-contact heat and thermal-bond candidates
+		linkLookupSlot: 0, linkLookupKey: 0, linkLookupValue: -1,
+		linkA: new Int32Array(cap * 8), linkB: new Int32Array(cap * 8),
+		linkRest: new Float32Array(cap * 8), linkK: new Float32Array(cap * 8), linkN: 0,
+		linkHashKeys: null, linkHashValues: null, linkHashMask: 0,
 		pointer: { x: 0, y: 0, px: 0, py: 0, vx: 0, vy: 0, down: false, active: false, grab: -1, moved: 0, downT: 0 },
 		acc: 0,
 	};
+	initLinkHash(world);
 	resizeWorld(world, W, H);
 	spawnBed(world);
 	return world;
 }
 
-/* remaps beads into the new geometry; safe to call before spawn (n = 0) */
+/* Rebuild the bed after geometry changes so configured coverage stays constant. */
 function resizeWorld(world, W, H) {
-	const sx = W / (world.W || W);
-	const sy = H / (world.H || H);
 	world.W = W; world.H = H;
 	const t = world.tank;
 	t.x0 = W * 0.055; t.x1 = W * 0.945;
@@ -67,12 +71,7 @@ function resizeWorld(world, W, H) {
 	world.waterY = H * WATER_FRAC;
 	world.grav = 1850 * clamp(H / 950, 0.75, 1.25);
 	initWave(world);
-	for (let i = 0; i < world.n; i++) {
-		world.x[i] = clamp(world.x[i] * sx, t.x0 + world.r[i], t.x1 - world.r[i]);
-		world.y[i] = clamp(world.y[i] * sy, t.y0 + world.r[i], t.y1 - world.r[i]);
-		world.vx[i] *= 0.5;
-		world.vy[i] *= 0.5;
-	}
+	if (world.n > 0) spawnBed(world);
 }
 
 /* ------------------------- wave field -------------------------
@@ -155,44 +154,70 @@ function pushBead(world, x, y, r, dens) {
 	world.vx[i] = (Math.random() - 0.5) * 30;
 	world.vy[i] = 0;
 	world.r[i] = r;
+	world.baseSize[i] = r / world.rBar;
 	world.dens[i] = dens;
-	world.invM[i] = 1 / (dens * r * r);		// 2D mass, pi cancels in weighting
+	world.invM[i] = 1 / (world.massScale * dens * r * r);	// 2D mass, pi cancels in weighting
 	world.frac[i] = 0;
+	world.temp[i] = 0.5;
 	world.alpha[i] = 0.82 + Math.random() * 0.16;
 	world.pal[i] = (dens < 1 ? 0 : PAL_LIGHT) + ((Math.random() * PAL_LIGHT) | 0);
 	if (r > world.rMax) world.rMax = r;
 	return i;
 }
 
-/* checkerboard hex bed: big/small beads alternate -> almost no initial
-   overlap, mean bead area matches the ~70%-of-water coverage target */
+/* Checkerboard hex bed: alternating bead sizes avoid large initial
+   overlaps while count is derived from requested water-body coverage. */
 function spawnBed(world) {
 	const t = world.tank;
 	world.n = 0;
-	world.rMax = 0;
+	world.linkN = 0;
+	if (world.linkHashKeys) world.linkHashKeys.fill(-1);
+	world.rBar = world.typicalRadius;
+	world.rMax = world.rBar * 1.28 * Math.pow(2, Math.abs(world.sizeResponse) * 0.5);
 	world.acc = 0;
 	const innerW = t.x1 - t.x0;
-	const waterD = t.y1 - world.waterY;
-
-	// mean bead area of the big/small mix: pi * 1.027 * rBar^2 (~3.226 rBar^2)
-	world.rBar = clamp(Math.sqrt(FILL_FRAC * innerW * waterD / (3.226 * TARGET_PARTICLES)), 7.5, 26);
-
+	const canvasArea = world.W * world.H;
+	const meanAreaFactor = Math.PI * 1.027;
+	const target = Math.min(world.cap, Math.max(1, Math.round(world.fillFraction * canvasArea / (meanAreaFactor * world.rBar * world.rBar))));
 	const sx = 2.4 * world.rBar, sy = 1.87 * world.rBar;
-	const cols = Math.max(4, Math.floor(innerW / sx));
-	const rows = Math.max(3, Math.round(TARGET_PARTICLES / cols));
+	const cols = Math.max(1, Math.floor(innerW / sx));
+	const rows = Math.ceil(target / cols);
 
-	for (let row = 0; row < rows; row++) {
+	for (let row = 0; row < rows && world.n < target; row++) {
 		const y = t.y1 - (row + 0.6) * sy;
-		for (let col = 0; col < cols; col++) {
+		for (let col = 0; col < cols && world.n < target; col++) {
 			const x = t.x0 + (col + 0.5 + (row % 2 ? 0.5 : 0)) * sx;
 			if (x > t.x1 - 2) continue;
 			const big = ((col + row) % 2) === 0;
-			const r = big ? world.rBar * (1.05 + Math.random() * 0.23)
-				: world.rBar * (0.72 + Math.random() * 0.23);
+			const r = world.rBar * (big ? 1.05 + Math.random() * 0.23 : 0.72 + Math.random() * 0.23);
 			pushBead(world, x + (Math.random() - 0.5) * 3, y + (Math.random() - 0.5) * 3, r, rollDensity());
 		}
 	}
 	world.pointer.grab = -1;
+}
+
+function setHeatRate(world, value) {
+	world.heatRate = clamp(value, 0, 4);
+}
+
+function setSizeResponse(world, value) {
+	world.sizeResponse = clamp(value, -1, 1);
+	world.rMax = world.typicalRadius * 1.28 * Math.pow(2, Math.abs(world.sizeResponse) * 0.5);
+}
+
+function setTypicalRadius(world, value) {
+	world.typicalRadius = clamp(value, 8, 22);
+	world.rBar = world.typicalRadius;
+	world.rMax = world.rBar * 1.28 * Math.pow(2, Math.abs(world.sizeResponse) * 0.5);
+}
+
+function setFillFraction(world, value) {
+	world.fillFraction = clamp(value, 0.3, 0.7);
+}
+
+function setMassScale(world, value) {
+	world.massScale = clamp(value, 0.4, 2.5);
+	for (let i = 0; i < world.n; i++) world.invM[i] = 1 / (world.massScale * world.dens[i] * world.r[i] * world.r[i]);
 }
 
 function addBead(world, x, y) {
@@ -217,7 +242,7 @@ function splash(world) {
 /* ------------------------- spatial grid ------------------------- */
 
 function buildGrid(world) {
-	const cs = 2 * world.rMax;
+	const cs = 2 * world.rMax * world.pairRF;
 	const gw = Math.max(1, Math.ceil(world.W / cs));
 	const gh = Math.max(1, Math.ceil(world.H / cs));
 	world.gw = gw; world.gh = gh;
@@ -256,7 +281,7 @@ function pairTest(world, i, j, rf) {
    cells only in +x and +y direction */
 function collectPairs(world) {
 	world.pairN = 0;
-	const cs = 2 * world.rMax;
+	const cs = 2 * world.rMax * world.pairRF;
 	const gw = world.gw, gh = world.gh;
 	const head = world.head, nxt = world.nxt;
 	const x = world.x, y = world.y;
@@ -282,10 +307,113 @@ function collectPairs(world) {
 	}
 }
 
+/* Persistent pair bonds use a bounded open-addressed table. The table is
+   cleared only when a new bed is dealt; stable particle indices keep keys valid. */
+function initLinkHash(world) {
+	if (world.linkHashKeys) return;
+	let size = 1;
+	while (size < world.cap * 32) size *= 2;
+	world.linkHashKeys = new Int32Array(size);
+	world.linkHashValues = new Int32Array(size);
+	world.linkHashKeys.fill(-1);
+	world.linkHashValues.fill(-1);
+	world.linkHashMask = size - 1;
+}
+
+function findLink(world, a, b) {
+	const cap = world.cap;
+	if (a > b) { const swap = a; a = b; b = swap; }
+	const key = a * cap + b;
+	let slot = (Math.imul(key, 2654435761) >>> 0) & world.linkHashMask;
+	const keys = world.linkHashKeys;
+	while (keys[slot] !== -1 && keys[slot] !== key) slot = (slot + 1) & world.linkHashMask;
+	world.linkLookupSlot = slot;
+	world.linkLookupKey = key;
+	world.linkLookupValue = keys[slot] === key ? world.linkHashValues[slot] : -1;
+}
+
+function collectThermalBonds(world) {
+	initLinkHash(world);
+	const temp = world.temp, x = world.x, y = world.y, r = world.r;
+	for (let k = 0; k < world.pairN; k++) {
+		const a = world.pairA[k], b = world.pairB[k];
+		if ((temp[a] + temp[b]) * 0.5 >= 0.55) continue;
+		const dx = x[b] - x[a], dy = y[b] - y[a];
+		const rr = r[a] + r[b];
+		const d2 = dx * dx + dy * dy;
+		if (d2 >= rr * rr * 1.1664 || d2 < 1e-9) continue;
+		findLink(world, a, b);
+		if (world.linkLookupValue >= 0 || world.linkN >= world.linkA.length) continue;
+		const link = world.linkN++;
+		world.linkA[link] = a;
+		world.linkB[link] = b;
+		world.linkRest[link] = Math.max(1.01, Math.sqrt(d2) / rr);
+		world.linkK[link] = 0;
+		world.linkHashKeys[world.linkLookupSlot] = world.linkLookupKey;
+		world.linkHashValues[world.linkLookupSlot] = link;
+	}
+	for (let k = 0; k < world.linkN; k++) {
+		const heat = (temp[world.linkA[k]] + temp[world.linkB[k]]) * 0.5;
+		const cold = clamp((0.55 - heat) / 0.40, 0, 1);
+		world.linkK[k] = cold * cold * 0.72;
+	}
+}
+
+function exchangeHeat(world, h) {
+	const rate = world.heatRate;
+	if (rate <= 0) return;
+	const temp = world.temp, delta = world.heatDelta;
+	const topEnd = world.H * 0.24;
+	const bottomStart = world.H * 0.76;
+	for (let i = 0; i < world.n; i++) {
+		const py = world.y[i];
+		if (py < topEnd) {
+			const weight = 1 - py / topEnd;
+			const target = 0.02 + 0.18 * (py / topEnd);
+			temp[i] += (target - temp[i]) * (1 - Math.exp(-rate * weight * h));
+		} else if (py > bottomStart) {
+			const u = clamp((py - bottomStart) / (world.H - bottomStart), 0, 1);
+			const weight = u * u * (3 - 2 * u);
+			temp[i] += (1 - temp[i]) * (1 - Math.exp(-rate * weight * h));
+		}
+		delta[i] = 0;
+	}
+	for (let k = 0; k < world.pairN; k++) {
+		const a = world.pairA[k], b = world.pairB[k];
+		const transfer = (temp[b] - temp[a]) * rate * h * 0.12;
+		delta[a] += transfer;
+		delta[b] -= transfer;
+	}
+	for (let i = 0; i < world.n; i++) temp[i] = clamp(temp[i] + delta[i], 0, 1);
+}
+
+function updateThermalSize(world, i) {
+	const factor = Math.pow(2, world.sizeResponse * (world.temp[i] - 0.5));
+	const r = world.rBar * factor * (world.baseSize[i] || 1);
+	world.r[i] = r;
+	world.invM[i] = 1 / (world.massScale * world.dens[i] * r * r);
+}
+
 /* ------------------------- physics ------------------------- */
 
-/* soft, mass-weighted pair relaxation + rigid walls; freeze links
-   (distance constraints) join this same iteration loop in 0.2 */
+/* Soft, mass-weighted contact relaxation plus thermal distance bonds and walls. */
+function solveLinks(world) {
+	const x = world.x, y = world.y, r = world.r, invM = world.invM;
+	for (let k = 0; k < world.linkN; k++) {
+		const stiffness = world.linkK[k];
+		if (stiffness <= 0) continue;
+		const a = world.linkA[k], b = world.linkB[k];
+		const dx = x[b] - x[a], dy = y[b] - y[a];
+		const d2 = dx * dx + dy * dy;
+		if (d2 < 1e-9) continue;
+		const d = Math.sqrt(d2), target = world.linkRest[k] * (r[a] + r[b]);
+		const corr = (d - target) * stiffness / (invM[a] + invM[b]);
+		const nx = dx / d, ny = dy / d, wa = invM[a], wb = invM[b];
+		x[a] += nx * corr * wa; y[a] += ny * corr * wa;
+		x[b] -= nx * corr * wb; y[b] -= ny * corr * wb;
+	}
+}
+
 function solveContacts(world) {
 	const x = world.x, y = world.y, r = world.r, invM = world.invM;
 	const pairA = world.pairA, pairB = world.pairB, pairN = world.pairN;
@@ -304,6 +432,7 @@ function solveContacts(world) {
 			x[a] -= nx * corr * wa; y[a] -= ny * corr * wa;
 			x[b] += nx * corr * wb; y[b] += ny * corr * wb;
 		}
+		solveLinks(world);
 		for (let i = 0; i < world.n; i++) {
 			const rad = r[i];
 			if (x[i] < t.x0 + rad) x[i] = t.x0 + rad;
@@ -335,6 +464,19 @@ function dampContacts(world) {
 		vx[a] -= jn * nx * invM[a]; vy[a] -= jn * ny * invM[a];
 		vx[b] += jn * nx * invM[b]; vy[b] += jn * ny * invM[b];
 	}
+	for (let k = 0; k < world.linkN; k++) {
+		const stiffness = world.linkK[k];
+		if (stiffness <= 0) continue;
+		const a = world.linkA[k], b = world.linkB[k];
+		const dx = x[b] - x[a], dy = y[b] - y[a];
+		const d2 = dx * dx + dy * dy;
+		if (d2 < 1e-9) continue;
+		const d = Math.sqrt(d2), nx = dx / d, ny = dy / d;
+		const vn = (vx[b] - vx[a]) * nx + (vy[b] - vy[a]) * ny;
+		const jn = -vn * stiffness / (invM[a] + invM[b]);
+		vx[a] -= jn * nx * invM[a]; vy[a] -= jn * ny * invM[a];
+		vx[b] += jn * nx * invM[b]; vy[b] += jn * ny * invM[b];
+	}
 }
 
 function pointerForce(world, i, h) {
@@ -343,7 +485,7 @@ function pointerForce(world, i, h) {
 	if (ptr.grab >= 0) {
 		if (ptr.grab !== i) return;
 		// soft spring toward the pointer; heavier beads lag a bit
-		const mf = Math.min(3, world.dens[i] * (world.r[i] * world.r[i]) / (world.rBar * world.rBar));
+		const mf = Math.min(3, world.massScale * world.dens[i] * (world.r[i] * world.r[i]) / (world.rBar * world.rBar));
 		vx[i] += ((ptr.x - x[i]) * 300 - vx[i] * 20) * h / mf;
 		vy[i] += ((ptr.y - y[i]) * 300 - vy[i] * 20) * h / mf;
 		return;
@@ -369,6 +511,7 @@ function substep(world, h) {
 
 	// 1) gravity vs Archimedes + drag, then integrate
 	for (let i = 0; i < n; i++) {
+		updateThermalSize(world, i);
 		px[i] = x[i]; py[i] = y[i];
 		const f = submergedFrac(y[i] - surf, r[i]);
 		frac[i] = f;
@@ -382,6 +525,8 @@ function substep(world, h) {
 	// 2) smooth contact solving
 	buildGrid(world);
 	collectPairs(world);
+	exchangeHeat(world, h);
+	collectThermalBonds(world);
 	solveContacts(world);
 
 	// 3) derive velocities from corrected positions (no restitution -> calm)
@@ -470,7 +615,8 @@ if (typeof module !== "undefined" && module.exports) {
 	module.exports = {
 		createWorld, resizeWorld, stepWorld, substep,
 		spawnBed, addBead, splash, rollDensity, submergedFrac,
+		setHeatRate, setSizeResponse, setTypicalRadius, setFillFraction, setMassScale,
 		disturb, pickBead, pointerMove, pointerDown, pointerUp,
-		SPAWN_CAP, TARGET_PARTICLES, WATER_FRAC, FILL_FRAC, SUBSTEP,
+		SPAWN_CAP, WATER_FRAC, SUBSTEP,
 	};
 }

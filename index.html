@@ -3,27 +3,49 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
-<title>Hydrogel Basin</title>
+<title>Hydrogel Basin — Thermal Study</title>
 <style>
-	html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#0b1418}
+	html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#0b1418;color:#d8edf2;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 	canvas{display:block;width:100vw;height:100vh;touch-action:none;cursor:default}
-	.hud,.hint,.stats{position:fixed;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-		user-select:none;-webkit-user-select:none;pointer-events:none;z-index:2}
-	.hud{left:20px;top:18px}
+	.hud,.hint,.stats{position:fixed;user-select:none;-webkit-user-select:none;pointer-events:none;z-index:2}
+	.hud{left:20px;top:18px;max-width:min(52vw,520px)}
 	.hud h1{margin:0;font-size:12px;font-weight:700;letter-spacing:.28em;color:#9fd8e8}
 	.hud p{margin:6px 0 0;font-size:10px;letter-spacing:.12em;color:rgba(170,215,230,.55)}
-	.hint{left:20px;bottom:16px;font-size:10px;letter-spacing:.10em;color:rgba(170,215,230,.5)}
-	.hint b{color:rgba(210,240,250,.78);font-weight:600}
-	.stats{right:20px;bottom:16px;font-size:10px;letter-spacing:.12em;color:rgba(170,215,230,.4);text-align:right}
+	.hint{left:20px;bottom:16px;font-size:10px;letter-spacing:.07em;color:rgba(170,215,230,.58)}
+	.hint b{color:rgba(210,240,250,.88);font-weight:600}
+	.stats{right:20px;bottom:16px;font-size:10px;letter-spacing:.12em;color:rgba(170,215,230,.65);text-align:right}
+	.controls{position:fixed;z-index:3;right:18px;top:18px;width:280px;max-height:calc(100vh - 76px);overflow:auto;padding:14px 16px;background:rgba(8,23,29,.86);border:1px solid rgba(159,216,232,.19);box-shadow:0 12px 40px rgba(0,0,0,.24);backdrop-filter:blur(10px)}
+	.controls h2{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#9fd8e8;margin:0 0 12px}
+	.control{display:block;margin:11px 0 13px}
+	.control span{display:flex;justify-content:space-between;gap:12px;font-size:10px;letter-spacing:.05em;color:rgba(210,236,242,.78)}
+	.control output{color:#a9e2e8;font-variant-numeric:tabular-nums}
+	.control input{width:100%;margin:8px 0 0;accent-color:#78d5db}
+	.control small{display:block;font-size:9px;color:rgba(170,215,230,.45);margin-top:2px}
+	.actions{display:flex;gap:8px;margin-top:12px}
+	.temp-key{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:9px;color:rgba(170,215,230,.55)}
+	.temp-key i{height:5px;flex:1;background:linear-gradient(90deg,#5686f5,#4dcbdc,#88d66d,#e8bf55,#e95170)}
+	button{flex:1;padding:8px 9px;border:1px solid rgba(159,216,232,.25);background:rgba(91,163,177,.10);color:#bde7ec;font:10px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.08em;cursor:pointer}
+	button:hover,button[aria-pressed="true"]{background:rgba(91,190,200,.25);border-color:rgba(159,216,232,.55)}
+	@media(max-width:700px){.controls{right:8px;top:8px;width:min(258px,calc(100vw - 32px));max-height:55vh;padding:10px 12px}.hud{top:12px;left:12px;max-width:calc(100vw - 300px)}.hud h1{font-size:10px}.hud p{display:none}.hint{left:12px;bottom:10px;max-width:48vw;font-size:9px}.stats{right:12px;bottom:10px;font-size:9px}}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div class="hud">
-	<h1>HYDROGEL&nbsp;&middot;&nbsp;BUOYANCY BASIN</h1>
-	<p>ARCHIMEDES PLAYGROUND &mdash; RANDOM MASS &amp; SIZE, SOFT COLLISIONS</p>
+	<h1>HYDROGEL&nbsp;&middot;&nbsp;THERMAL BASIN</h1>
+	<p>COOL BEADS BOND · WARM BEADS EXPAND · TEMPERATURE 0—1</p>
 </div>
-<div class="hint" id="hint">drag a bead to toss it &middot; click water to add one &middot; <b>SPACE</b> splash &middot; <b>R</b> resettle</div>
+<aside class="controls" aria-label="Simulation controls">
+	<h2>Thermal controls</h2>
+	<label class="control"><span>Heat exchange <output id="heatValue">1.00×</output></span><input id="heatRate" type="range" min="0" max="4" step="0.05" value="1"><small>ambient zones and bead-to-bead transfer</small></label>
+	<label class="control"><span>Thermal size <output id="sizeValue">0.00</output></span><input id="sizeResponse" type="range" min="-1" max="1" step="0.05" value="0"><small>negative: hot shrinks · positive: hot grows</small></label>
+	<label class="control"><span>Canvas coverage <output id="fillValue">50%</output></span><input id="fillFraction" type="range" min="30" max="70" step="1" value="50"><small id="countValue">0 beads at typical size</small></label>
+	<label class="control"><span>Typical radius <output id="radiusValue">14 px</output></span><input id="typicalRadius" type="range" min="8" max="22" step="1" value="14"><small>collision radius at temperature 0.5</small></label>
+	<label class="control"><span>Average mass <output id="massValue">1.00×</output></span><input id="massScale" type="range" min="0.4" max="2.5" step="0.05" value="1"><small>inertia scale; buoyancy density stays independent</small></label>
+	<div class="actions"><button id="viewToggle" type="button" aria-pressed="false">Temperature hue: off</button><button id="redeal" type="button">Re-deal bed</button></div>
+	<div class="temp-key"><span>0 cold</span><i></i><span>1 hot</span></div>
+</aside>
+<div class="hint" id="hint">drag beads · click to add · <b>SPACE</b> splash · <b>R</b> re-deal</div>
 <div class="stats" id="stats"></div>
 <script src="js/engine.js"></script>
 <script src="js/render.js"></script>
