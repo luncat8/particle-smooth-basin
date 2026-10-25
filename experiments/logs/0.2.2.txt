@@ -1,0 +1,10 @@
+0.2.2 thermal bench · node v22.22.3 · 1280×800
+n=810 · rBar=14.0 · 0.64 ms/frame (1567 fps headroom)
+60 s settle: NaN=0 · max|v|=2 · mean|v|=0.0
+above line=227 · fully submerged=539 · mean submerged fraction=0.69 · peak pairs=2223 / 12000
+splash stress: NaN=0 · max|v|=9
+arch-size stress (a=10, size=-1, buoyancy=1.5): NaN=0 · max|v|=167
+profile near-cap: n=1500 · 1.52 ms/frame · peak pairs=3830 / 12000
+Archimedes: dens 0.5 -> submerged fraction 0.500; dens 2.0 -> 1.000 (default buoyancy=1, size coupling=0)
+thermal checks: independent source/conduction rates, thermal sizing, buoyancy strength, size coupling, bonds and coverage passed
+browser bundle smoke: all six quick presets and live controls passed

@@ -12,6 +12,8 @@ const DEFAULT_RADIUS = 14;
 const SIZE_FACTOR_MAX = 1.28;	// upper bound on bead r/rBar; pair-grid cell size assumes it
 const SPAWN_CAP = 1500;
 const RHO_WATER = 1;
+const ARCH_LIFT_LIMIT = 8;
+const ARCH_SIZE_RANGE = 10;
 const DRAG_AIR = 0.05;		// 1/s
 const DRAG_WATER = 2.7;		// 1/s, scaled by submerged fraction^2
 const SUBSTEP = 1 / 120;
@@ -36,7 +38,8 @@ function createWorld(W, H) {
 		grav: 1850,			// px/s^2, rescaled with screen height
 		rBar: DEFAULT_RADIUS, rMax: 24,
 		fillFraction: DEFAULT_FILL, typicalRadius: DEFAULT_RADIUS, massScale: 1,
-		heatRate: 1, sizeResponse: 0, archSize: 0, temperatureView: false,
+		sourceRate: 1, conductionRate: 1, sizeResponse: 0, archSize: 0, buoyancy: 1,
+		temperatureView: false,
 		n: 0, cap,
 		x: new Float64Array(cap), y: new Float64Array(cap),
 		px: new Float64Array(cap), py: new Float64Array(cap),
@@ -201,8 +204,12 @@ function syncRMax(world) {
 	world.rMax = world.rBar * SIZE_FACTOR_MAX * Math.pow(2, Math.abs(world.sizeResponse) * 0.5);
 }
 
-function setHeatRate(world, value) {
-	world.heatRate = clamp(value, 0, 4);
+function setSourceRate(world, value) {
+	world.sourceRate = clamp(value, 0, 4);
+}
+
+function setConductionRate(world, value) {
+	world.conductionRate = clamp(value, 0, 4);
 }
 
 function setSizeResponse(world, value) {
@@ -211,7 +218,11 @@ function setSizeResponse(world, value) {
 }
 
 function setArchSize(world, value) {
-	world.archSize = clamp(value, -1, 1);
+	world.archSize = clamp(value, -ARCH_SIZE_RANGE, ARCH_SIZE_RANGE);
+}
+
+function setBuoyancy(world, value) {
+	world.buoyancy = clamp(value, 0, 2);
 }
 
 function setTypicalRadius(world, value) {
@@ -369,27 +380,31 @@ function collectThermalBonds(world) {
 }
 
 function exchangeHeat(world, h) {
-	const rate = world.heatRate;
-	if (rate <= 0) return;
+	const sourceRate = world.sourceRate, conductionRate = world.conductionRate;
+	if (sourceRate <= 0 && conductionRate <= 0) return;
 	const temp = world.temp, delta = world.heatDelta;
 	const topEnd = world.H * 0.24;
 	const bottomStart = world.H * 0.76;
 	for (let i = 0; i < world.n; i++) {
-		const py = world.y[i];
-		if (py < topEnd) {
-			const weight = 1 - py / topEnd;
-			const target = 0.02 + 0.18 * (py / topEnd);
-			temp[i] += (target - temp[i]) * (1 - Math.exp(-rate * weight * h));
-		} else if (py > bottomStart) {
-			const u = clamp((py - bottomStart) / (world.H - bottomStart), 0, 1);
-			const weight = u * u * (3 - 2 * u);
-			temp[i] += (1 - temp[i]) * (1 - Math.exp(-rate * weight * h));
+		if (sourceRate > 0) {
+			const py = world.y[i];
+			if (py < topEnd) {
+				const weight = 1 - py / topEnd;
+				const target = 0.02 + 0.18 * (py / topEnd);
+				temp[i] += (target - temp[i]) * (1 - Math.exp(-sourceRate * weight * h));
+			} else if (py > bottomStart) {
+				const u = clamp((py - bottomStart) / (world.H - bottomStart), 0, 1);
+				const weight = u * u * (3 - 2 * u);
+				temp[i] += (1 - temp[i]) * (1 - Math.exp(-sourceRate * weight * h));
+			}
 		}
 		delta[i] = 0;
 	}
+	if (conductionRate <= 0) return;
+	const conductivity = conductionRate * h * 0.12;
 	for (let k = 0; k < world.pairN; k++) {
 		const a = world.pairA[k], b = world.pairB[k];
-		const transfer = (temp[b] - temp[a]) * rate * h * 0.12;
+		const transfer = (temp[b] - temp[a]) * conductivity;
 		delta[a] += transfer;
 		delta[b] -= transfer;
 	}
@@ -520,15 +535,17 @@ function substep(world, h) {
 	const ptrOn = world.pointer.active;
 
 	// 1) gravity vs Archimedes + drag, then integrate. archSize couples
-	// buoyancy to radius: lift = (r/rBar)^archSize, zero keeps it size-free
-	const arch = world.archSize, rBarInv = 1 / world.rBar;
+	// buoyancy to radius; the lift multiplier is bounded for extreme exponents.
+	const arch = world.archSize, buoyancy = world.buoyancy, rBarInv = 1 / world.rBar;
 	for (let i = 0; i < n; i++) {
 		updateThermalSize(world, i);
 		px[i] = x[i]; py[i] = y[i];
 		const f = submergedFrac(y[i] - surf, r[i]);
 		frac[i] = f;
-		const lift = arch ? Math.pow(r[i] * rBarInv, arch) : 1;
-		vy[i] += grav * (1 - RHO_WATER * f * lift / dens[i]) * h;
+		const lift = arch && buoyancy
+			? clamp(Math.pow(r[i] * rBarInv, arch), 1 / ARCH_LIFT_LIMIT, ARCH_LIFT_LIMIT)
+			: 1;
+		vy[i] += grav * (1 - buoyancy * RHO_WATER * f * lift / dens[i]) * h;
 		const df = 1 / (1 + (DRAG_AIR + DRAG_WATER * f * f) * h);
 		vx[i] *= df; vy[i] *= df;
 		if (ptrOn) pointerForce(world, i, h);
@@ -628,7 +645,8 @@ if (typeof module !== "undefined" && module.exports) {
 	module.exports = {
 		createWorld, resizeWorld, stepWorld, substep,
 		spawnBed, addBead, splash, rollDensity, submergedFrac,
-		setHeatRate, setSizeResponse, setArchSize, setTypicalRadius, setFillFraction, setMassScale,
+		setSourceRate, setConductionRate, setSizeResponse, setArchSize, setBuoyancy,
+		setTypicalRadius, setFillFraction, setMassScale,
 		disturb, pickBead, pointerMove, pointerDown, pointerUp,
 		SPAWN_CAP, WATER_FRAC, SUBSTEP,
 	};

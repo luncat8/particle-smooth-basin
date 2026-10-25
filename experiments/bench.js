@@ -40,7 +40,7 @@ for (let f = 0; f < FRAMES; f++) {
 const msPerFrame = Number(process.hrtime.bigint() - t0) / 1e6 / FRAMES;
 
 const s = settleStats(world);
-console.log("0.2.1 thermal bench  node=" + process.version + "  " + W + "x" + H);
+console.log("0.2.2 thermal bench  node=" + process.version + "  " + W + "x" + H);
 console.log("n=" + world.n + "  rBar=" + world.rBar.toFixed(1));
 console.log("throughput: " + msPerFrame.toFixed(2) + " ms/frame (" + (1000 / msPerFrame).toFixed(0) + " fps headroom) at " + FRAMES + " frames / 60 s sim");
 console.log("after settle: NaN=" + scanNaN(world) + "  max|v|=" + s.maxV.toFixed(0) + "  mean|v|=" + s.meanV.toFixed(1));
@@ -62,10 +62,11 @@ for (let f = 0; f < 300; f++) eng.stepWorld(world, 1 / 60);
 console.log("after splash: NaN=" + scanNaN(world) + "  max|v|=" + settleStats(world).maxV.toFixed(0));
 
 // --- extreme slider combo: big cold beads buoyant, hot beads shrink and flow ---
-eng.setArchSize(world, 1);
-eng.setSizeResponse(world, -0.5);
+eng.setArchSize(world, 10);
+eng.setSizeResponse(world, -1);
+eng.setBuoyancy(world, 1.5);
 for (let f = 0; f < 300; f++) eng.stepWorld(world, 1 / 60);
-console.log("arch-size stress (a=1, size=-0.5): NaN=" + scanNaN(world) + "  max|v|=" + settleStats(world).maxV.toFixed(0));
+console.log("arch-size stress (a=10, size=-1, buoyancy=1.5): NaN=" + scanNaN(world) + "  max|v|=" + settleStats(world).maxV.toFixed(0));
 
 // --- profile scene for the 0.3 go/no-go: near-cap bed ---
 const heavy = eng.createWorld(W, H);

@@ -20,6 +20,8 @@
 	.control span{display:flex;justify-content:space-between;gap:12px;font-size:10px;letter-spacing:.05em;color:rgba(210,236,242,.78)}
 	.control output{color:#a9e2e8;font-variant-numeric:tabular-nums}
 	.control input{width:100%;margin:8px 0 0;accent-color:#78d5db}
+	.control select{width:100%;margin:8px 0 0;padding:7px 8px;border:1px solid rgba(159,216,232,.25);background:#10242a;color:#cde9ee;font:10px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+	.control select:focus{outline:1px solid rgba(159,216,232,.55)}
 	.control small{display:block;font-size:9px;color:rgba(170,215,230,.45);margin-top:2px}
 	.actions{display:flex;gap:8px;margin-top:12px}
 	.temp-key{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:9px;color:rgba(170,215,230,.55)}
@@ -33,13 +35,24 @@
 <canvas id="c"></canvas>
 <div class="hud">
 	<h1>HYDROGEL&nbsp;&middot;&nbsp;THERMAL BASIN</h1>
-	<p>COOL BEADS BOND · WARM BEADS EXPAND · TEMPERATURE 0—1</p>
+	<p>COLD BEADS BOND · THERMAL SIZE + BUOYANCY COUPLINGS · TEMPERATURE 0—1</p>
 </div>
 <aside class="controls" aria-label="Simulation controls">
 	<h2>Thermal controls</h2>
-	<label class="control"><span>Heat exchange <output id="heatValue">1.00×</output></span><input id="heatRate" type="range" min="0" max="4" step="0.05" value="1"><small>ambient zones and bead-to-bead transfer</small></label>
+	<label class="control"><span>Thermal sources <output id="sourceValue">1.00×</output></span><input id="sourceRate" type="range" min="0" max="4" step="0.05" value="1"><small>cold-top and hot-bottom relaxation</small></label>
+	<label class="control"><span>Conduction <output id="conductionValue">1.00×</output></span><input id="conductionRate" type="range" min="0" max="4" step="0.05" value="1"><small>heat transfer between nearby beads</small></label>
 	<label class="control"><span>Thermal size <output id="sizeValue">0.00</output></span><input id="sizeResponse" type="range" min="-1" max="1" step="0.05" value="0"><small>negative: hot shrinks · positive: hot grows</small></label>
-	<label class="control"><span>Archimedes force vs size <output id="archValue">0.00</output></span><input id="archSize" type="range" min="-1" max="1" step="0.05" value="0"><small>0: buoyancy ignores size · positive: big beads more buoyant</small></label>
+	<label class="control"><span>Archimedes force vs size <output id="archValue">0.00</output></span><input id="archSize" type="range" min="-10" max="10" step="0.1" value="0"><small>lift scales by size^value; multiplier bounded to 1/8–8×</small></label>
+	<label class="control"><span>Buoyancy strength <output id="buoyancyValue">1.00×</output></span><input id="buoyancy" type="range" min="0" max="2" step="0.05" value="1"><small>0: gravity only · 1×: current density balance</small></label>
+	<label class="control"><span>Quick preset</span><select id="scenarioPreset">
+		<option value="custom">Custom sliders</option>
+		<option value="shrinkFlow">Hot shrinks · flow only</option>
+		<option value="bigFloats">Big beads float</option>
+		<option value="shrinkConvection">Convection · hot shrinks and rises</option>
+		<option value="growConvection">Convection · hot grows and rises</option>
+		<option value="shrinkStable">Stable · hot shrinks and sinks</option>
+		<option value="growStable">Stable · hot grows and sinks</option>
+	</select><small>presets set thermal size + size coupling only</small></label>
 	<label class="control"><span>Canvas coverage <output id="fillValue">50%</output></span><input id="fillFraction" type="range" min="30" max="70" step="1" value="50"><small id="countValue">0 beads at typical size</small></label>
 	<label class="control"><span>Typical radius <output id="radiusValue">14 px</output></span><input id="typicalRadius" type="range" min="8" max="22" step="1" value="14"><small>collision radius at temperature 0.5</small></label>
 	<label class="control"><span>Average mass <output id="massValue">1.00×</output></span><input id="massScale" type="range" min="0.4" max="2.5" step="0.05" value="1"><small>inertia scale; buoyancy density stays independent</small></label>

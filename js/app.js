@@ -10,6 +10,30 @@ let assets = null;
 let dpr = Math.min(window.devicePixelRatio || 1, 2);
 const sprites = buildSprites();
 const temperatureSprites = buildTemperatureSprites();
+const SCENARIO_PRESETS = {
+	shrinkFlow: [-1, 0],
+	bigFloats: [0, 4],
+	shrinkConvection: [-1, -4],
+	growConvection: [1, 4],
+	shrinkStable: [-1, 4],
+	growStable: [1, -4],
+};
+
+function signedValue(value) {
+	return (value > 0 ? "+" : "") + value.toFixed(2);
+}
+
+function syncSizeControl(value) {
+	$("sizeResponse").value = value;
+	setSizeResponse(world, value);
+	$("sizeValue").textContent = signedValue(value);
+}
+
+function syncArchControl(value) {
+	$("archSize").value = value;
+	setArchSize(world, value);
+	$("archValue").textContent = signedValue(value);
+}
 
 function fit() {
 	const W = window.innerWidth, H = window.innerHeight;
@@ -82,22 +106,39 @@ canvas.addEventListener("pointerup", endPointer);
 canvas.addEventListener("pointercancel", endPointer);
 canvas.addEventListener("contextmenu", e => e.preventDefault());
 
-$("heatRate").addEventListener("input", e => {
+$("sourceRate").addEventListener("input", e => {
 	const value = Number(e.target.value);
-	setHeatRate(world, value);
-	$("heatValue").textContent = value.toFixed(2) + "×";
+	setSourceRate(world, value);
+	$("sourceValue").textContent = value.toFixed(2) + "×";
+});
+
+$("conductionRate").addEventListener("input", e => {
+	const value = Number(e.target.value);
+	setConductionRate(world, value);
+	$("conductionValue").textContent = value.toFixed(2) + "×";
 });
 
 $("sizeResponse").addEventListener("input", e => {
-	const value = Number(e.target.value);
-	setSizeResponse(world, value);
-	$("sizeValue").textContent = (value > 0 ? "+" : "") + value.toFixed(2);
+	syncSizeControl(Number(e.target.value));
+	$("scenarioPreset").value = "custom";
 });
 
 $("archSize").addEventListener("input", e => {
+	syncArchControl(Number(e.target.value));
+	$("scenarioPreset").value = "custom";
+});
+
+$("buoyancy").addEventListener("input", e => {
 	const value = Number(e.target.value);
-	setArchSize(world, value);
-	$("archValue").textContent = (value > 0 ? "+" : "") + value.toFixed(2);
+	setBuoyancy(world, value);
+	$("buoyancyValue").textContent = value.toFixed(2) + "×";
+});
+
+$("scenarioPreset").addEventListener("change", e => {
+	const preset = SCENARIO_PRESETS[e.target.value];
+	if (!preset) return;
+	syncSizeControl(preset[0]);
+	syncArchControl(preset[1]);
 });
 
 $("fillFraction").addEventListener("input", e => {
