@@ -106,6 +106,15 @@ function makeAssets(ctx, world) {
 	a.hotZone.addColorStop(0, "rgba(255,142,70,0)");
 	a.hotZone.addColorStop(1, "rgba(255,142,70,0.13)");
 
+	a.tankOuter = tankPath(world, 0);
+	a.tankInner = tankPath(world, 3);
+	a.tankRim = new Path2D();
+	a.tankRim.moveTo(t.x0 - 7, t.y0); a.tankRim.lineTo(t.x0 + 9, t.y0);
+	a.tankRim.moveTo(t.x1 - 9, t.y0); a.tankRim.lineTo(t.x1 + 7, t.y0);
+
+	ctx.lineCap = "round";
+	ctx.font = FONT_MONO;
+	ctx.textAlign = "right";
 	return a;
 }
 
@@ -119,16 +128,17 @@ function waterPath(ctx, world) {
 	ctx.closePath();
 }
 
-function tankPath(ctx, world, off) {
+function tankPath(world, off) {
 	const t = world.tank;
 	const x0 = t.x0 + off, x1 = t.x1 - off, y0 = t.y0, y1 = t.y1 - off, r = 14;
-	ctx.beginPath();
-	ctx.moveTo(x0, y0);
-	ctx.lineTo(x0, y1 - r);
-	ctx.quadraticCurveTo(x0, y1, x0 + r, y1);
-	ctx.lineTo(x1 - r, y1);
-	ctx.quadraticCurveTo(x1, y1, x1, y1 - r);
-	ctx.lineTo(x1, y0);
+	const path = new Path2D();
+	path.moveTo(x0, y0);
+	path.lineTo(x0, y1 - r);
+	path.quadraticCurveTo(x0, y1, x0 + r, y1);
+	path.lineTo(x1 - r, y1);
+	path.quadraticCurveTo(x1, y1, x1, y1 - r);
+	path.lineTo(x1, y0);
+	return path;
 }
 
 function drawTank(ctx, world, a) {
@@ -136,22 +146,16 @@ function drawTank(ctx, world, a) {
 	ctx.fillStyle = a.floorGrad;
 	ctx.fillRect(t.x0, t.y1 + 2, t.x1 - t.x0, 26);
 
-	ctx.lineCap = "round";
-	tankPath(ctx, world, 0);
 	ctx.strokeStyle = "rgba(178,222,235,0.30)";
 	ctx.lineWidth = 3;
-	ctx.stroke();
-	tankPath(ctx, world, 3);
+	ctx.stroke(a.tankOuter);
 	ctx.strokeStyle = "rgba(255,255,255,0.09)";
 	ctx.lineWidth = 1;
-	ctx.stroke();
+	ctx.stroke(a.tankInner);
 
 	ctx.strokeStyle = "rgba(210,240,250,0.5)";
 	ctx.lineWidth = 3;
-	ctx.beginPath();
-	ctx.moveTo(t.x0 - 7, t.y0); ctx.lineTo(t.x0 + 9, t.y0);
-	ctx.moveTo(t.x1 - 9, t.y0); ctx.lineTo(t.x1 + 7, t.y0);
-	ctx.stroke();
+	ctx.stroke(a.tankRim);
 }
 
 function render(ctx, world, a) {
@@ -161,9 +165,8 @@ function render(ctx, world, a) {
 	ctx.fillStyle = a.bgGrad; ctx.fillRect(0, 0, W, H);
 	ctx.fillStyle = a.glowGrad; ctx.fillRect(0, 0, W, H);
 
-	tankPath(ctx, world, 0);
 	ctx.fillStyle = "rgba(150,200,215,0.045)";
-	ctx.fill();
+	ctx.fill(a.tankOuter);
 
 	waterPath(ctx, world);
 	ctx.fillStyle = a.waterGradA;
@@ -173,21 +176,24 @@ function render(ctx, world, a) {
 	ctx.fillStyle = a.hotZone;
 	ctx.fillRect(t.x0, H * 0.76, t.x1 - t.x0, H * 0.24);
 
-	const linkStride = world.linkN > 5000 ? 2 : 1;
-	for (let pass = 0; pass < 3; pass++) {
-		ctx.beginPath();
-		for (let k = 0; k < world.linkN; k += linkStride) {
-			const strength = world.linkK[k];
-			const inBand = pass === 0 ? strength >= 0.04 && strength < 0.22
-				: pass === 1 ? strength >= 0.22 && strength < 0.50 : strength >= 0.50;
-			if (!inBand) continue;
-			const i = world.linkA[k], j = world.linkB[k];
-			ctx.moveTo(world.x[i], world.y[i]);
-			ctx.lineTo(world.x[j], world.y[j]);
+	const linkN = world.linkActiveN;
+	if (linkN) {
+		const linkStride = linkN > 5000 ? 2 : 1;
+		for (let pass = 0; pass < 3; pass++) {
+			const low = pass === 0 ? 0 : pass === 1 ? 0.22 : 0.50;
+			const high = pass === 0 ? 0.22 : pass === 1 ? 0.50 : Infinity;
+			ctx.beginPath();
+			for (let k = 0; k < linkN; k += linkStride) {
+				const strength = world.linkK[k];
+				if (strength < low || strength >= high) continue;
+				const i = world.linkA[k], j = world.linkB[k];
+				ctx.moveTo(world.x[i], world.y[i]);
+				ctx.lineTo(world.x[j], world.y[j]);
+			}
+			ctx.strokeStyle = pass === 0 ? "rgba(130,220,230,0.10)" : pass === 1 ? "rgba(160,235,238,0.20)" : "rgba(205,250,245,0.32)";
+			ctx.lineWidth = pass === 2 ? 1.5 : 1;
+			ctx.stroke();
 		}
-		ctx.strokeStyle = pass === 0 ? "rgba(130,220,230,0.10)" : pass === 1 ? "rgba(160,235,238,0.20)" : "rgba(205,250,245,0.32)";
-		ctx.lineWidth = pass === 2 ? 1.5 : 1;
-		ctx.stroke();
 	}
 
 	const sprites = a.sprites, tempSprites = a.tempSprites;
@@ -216,8 +222,6 @@ function render(ctx, world, a) {
 
 	drawTank(ctx, world, a);
 
-	ctx.font = FONT_MONO;
 	ctx.fillStyle = "rgba(170,220,235,0.42)";
-	ctx.textAlign = "right";
 	ctx.fillText("WATER LEVEL \u00B7 50%", t.x1 - 14, waterY - 10);
 }

@@ -126,10 +126,75 @@ bonded.temp[1] = 0.1;
 eng.substep(bonded, eng.SUBSTEP);
 assert.equal(bonded.linkN, 1, "cold near-contact pair creates one bond");
 assert.ok(bonded.linkK[0] > 0, "cold bond has positive stiffness");
+const rest = bonded.linkRest[0];
+eng.substep(bonded, eng.SUBSTEP);
+assert.equal(bonded.linkN, 1, "cold bond persists across substeps");
+assert.equal(bonded.linkRest[0], rest, "persistent bond keeps its rest distance");
 bonded.temp[0] = 1;
 bonded.temp[1] = 1;
 eng.substep(bonded, eng.SUBSTEP);
-assert.equal(bonded.linkK[0], 0, "warm bond softens to zero");
+assert.equal(bonded.linkN, 0, "warm bond thaws and leaves the solver");
+assert.equal(bonded.linkK[0], 0, "thawed bond has zero stiffness");
+placePair(bonded, 220, 200);
+bonded.temp[0] = 0.1;
+bonded.temp[1] = 0.1;
+eng.substep(bonded, eng.SUBSTEP);
+assert.equal(bonded.linkN, 0, "separated cold beads do not retain a long-range bond");
+
+// Hovering must not stir; only a held pointer applies the brush force.
+const hover = eng.createWorld(640, 480);
+eng.setSourceRate(hover, 0);
+eng.setConductionRate(hover, 0);
+hover.n = 1;
+hover.x[0] = 200; hover.y[0] = hover.waterY;
+hover.px[0] = hover.x[0]; hover.py[0] = hover.y[0];
+hover.vx[0] = hover.vy[0] = 0;
+hover.r[0] = 10; hover.baseSize[0] = 10 / hover.rBar;
+hover.dens[0] = 0.5; hover.invM[0] = 1 / (0.5 * 100);
+hover.temp[0] = 0.5;
+eng.pointerMove(hover, 230, hover.waterY);
+eng.substep(hover, eng.SUBSTEP);
+assert.ok(Math.abs(hover.vx[0]) < 1e-9, "hover does not stir beads");
+eng.pointerDown(hover, 230, hover.waterY, 0);
+eng.substep(hover, eng.SUBSTEP);
+assert.ok(hover.vx[0] < -1, "held pointer stirs nearby beads");
+eng.pointerUp(hover, 1000);
+assert.equal(hover.pointer.vx, 0, "pointer release clears stale brush velocity");
+eng.pointerMove(hover, 230, hover.waterY);
+hover.x[0] = 200; hover.y[0] = hover.waterY;
+hover.vx[0] = hover.vy[0] = 0;
+eng.substep(hover, eng.SUBSTEP);
+assert.ok(Math.abs(hover.vx[0]) < 1e-9 && hover.n === 1, "released pointer stops stirring without adding a bead");
+
+// Source-only updates keep temperature normalized even above the canvas.
+const sourceOnly = eng.createWorld(640, 480);
+eng.setConductionRate(sourceOnly, 0);
+eng.setSourceRate(sourceOnly, 4);
+sourceOnly.n = 1;
+sourceOnly.x[0] = 100; sourceOnly.y[0] = -50;
+sourceOnly.vx[0] = sourceOnly.vy[0] = 0;
+sourceOnly.temp[0] = 0.5;
+for (let i = 0; i < 120; i++) {
+	sourceOnly.y[0] = -50;
+	sourceOnly.vx[0] = sourceOnly.vy[0] = 0;
+	eng.substep(sourceOnly, eng.SUBSTEP);
+}
+assert.ok(sourceOnly.temp[0] >= 0 && sourceOnly.temp[0] <= 1, "source-only temperature stays normalized above the canvas");
+
+// The visual wave field must not advance faster on high-refresh displays.
+const wave60 = eng.createWorld(640, 480), wave120 = eng.createWorld(640, 480);
+for (const w of [wave60, wave120]) {
+	w.n = 0;
+	eng.disturb(w, 320, 1);
+}
+const frame60 = 2 * eng.SUBSTEP;
+for (let f = 0; f < 120; f++) eng.stepWorld(wave60, frame60);
+for (let f = 0; f < 240; f++) eng.stepWorld(wave120, eng.SUBSTEP);
+let waveDiff = 0;
+for (let i = 0; i < wave60.wave.n; i++) {
+	waveDiff = Math.max(waveDiff, Math.abs(wave60.wave.h[i] - wave120.wave.h[i]));
+}
+assert.ok(waveDiff < 1e-5, "wave state is identical at 60 Hz and 120 Hz frame rates");
 
 const coverage = eng.createWorld(1280, 800);
 eng.setFillFraction(coverage, 0.3);
@@ -140,4 +205,4 @@ const represented = coverage.n * Math.PI * 1.027 * coverage.rBar * coverage.rBar
 assert.ok(Math.abs(represented - 0.3) < 0.004, "bed count matches requested coverage within count quantization");
 assert.ok(coverage.n <= eng.SPAWN_CAP, "spawn respects the particle cap");
 
-console.log("thermal checks: independent source/conduction rates, thermal sizing, buoyancy strength, size coupling, bonds and coverage passed");
+console.log("thermal checks: rates, sizing, buoyancy, size coupling, thawing links, pointer, wave steps and coverage passed");

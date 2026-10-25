@@ -26,12 +26,22 @@ const contextTarget = {
 const context = new Proxy(contextTarget, { get(target, key) { return key in target ? target[key] : () => {}; }, set(target, key, value) { target[key] = value; return true; } });
 elements.c.getContext = () => context;
 function fakeCanvas() { return { width: 0, height: 0, getContext: () => context }; }
+class Path2D {
+	moveTo() {}
+	lineTo() {}
+	quadraticCurveTo() {}
+}
 const sandbox = {
+	Path2D,
 	document: { getElementById: id => elements[id], createElement: fakeCanvas },
-	window: { innerWidth: 800, innerHeight: 600, devicePixelRatio: 1, addEventListener() {} },
+	window: {
+		innerWidth: 800, innerHeight: 600, devicePixelRatio: 1,
+		listeners: Object.create(null),
+		addEventListener(type, fn) { this.listeners[type] = fn; },
+	},
 	performance: { now: () => 0 },
 	requestAnimationFrame(fn) { sandbox.nextFrame = fn; },
-	setTimeout() { return 1; },
+	setTimeout(fn) { fn(); return 1; },
 	clearTimeout() {},
 	console,
 };
@@ -69,4 +79,19 @@ assert.equal(Number(elements.sizeResponse.value), 1);
 assert.equal(Number(elements.archSize.value), -4);
 assert.equal(elements.sizeValue.textContent, "+1.00");
 assert.equal(elements.archValue.textContent, "-4.00");
-console.log("browser bundle smoke: boot, render, six presets and live controls passed");
+
+sandbox.window.devicePixelRatio = 2;
+sandbox.window.listeners.resize();
+assert.equal(elements.c.width, 1600, "resize refreshes DPR and backing-store width");
+assert.equal(elements.c.height, 1200, "resize refreshes DPR and backing-store height");
+for (let i = 1; i <= 31; i++) sandbox.nextFrame(1000 + i * 16.67);
+
+function beadCount() {
+	return Number(elements.stats.textContent.match(/^(\d+) BEADS/)[1]);
+}
+const beforeCancel = beadCount();
+elements.c.listeners.pointerdown({ clientX: 0, clientY: 0, pointerId: 1, preventDefault() {} });
+elements.c.listeners.pointercancel();
+for (let i = 1; i <= 31; i++) sandbox.nextFrame(2000 + i * 16.67);
+assert.equal(beadCount(), beforeCancel, "pointer cancel does not add a bead");
+console.log("browser bundle smoke: boot, render, six presets, live controls, DPR change and pointer cancel passed");

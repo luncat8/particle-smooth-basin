@@ -1,0 +1,8 @@
+0.2.3 review bench · node v22.22.3 · 1280×800 · seeded
+default n=810 · 0.56 ms/frame · 60 s NaN=0 · max|v|=9 · pair peak=2209/12000 · effective-link peak=74 · cold-link peak=1836/12000
+splash and arch-size stress (a=10, size=-1, buoyancy=1.5): NaN=0
+near-cap n=1500 · 1.27 ms/frame · pair peak=3754 · effective-link peak=0 / 12000
+Archimedes: dens 0.5 -> 0.500 · dens 2.0 -> 1.000
+alternating same-seed A/B: default 0.824 -> 0.620 ms/frame (-25%) · near-cap 1.680 -> 1.269 ms/frame (-24%)
+thermal checks: rates, sizing, buoyancy, size coupling, rest persistence, thawing/no long-range links, pointer gating, normalized source-only temperature, 60/120 Hz wave parity, coverage passed
+browser bundle smoke: boot, render, six presets, live controls, static Path2D assets, DPR change, pointer cancel passed

@@ -5,6 +5,15 @@
 
 const eng = require("../js/engine.js");
 
+// Stable initial conditions make throughput and link-count regressions comparable.
+let rng = 0x9e3779b9;
+Math.random = () => {
+	rng ^= rng << 13;
+	rng ^= rng >>> 17;
+	rng ^= rng << 5;
+	return (rng >>> 0) / 4294967296;
+};
+
 const W = 1280, H = 800;
 const world = eng.createWorld(W, H);
 
@@ -32,20 +41,23 @@ function settleStats(w) {
 // --- throughput: 60 s of sim time in 1/60 frames ---
 const FRAMES = 3600;
 const t0 = process.hrtime.bigint();
-let pairMax = 0;
+let pairMax = 0, linkMax = 0, storedLinkMax = 0;
 for (let f = 0; f < FRAMES; f++) {
 	eng.stepWorld(world, 1 / 60);
 	if (world.pairN > pairMax) pairMax = world.pairN;
+	if (world.linkActiveN > linkMax) linkMax = world.linkActiveN;
+	if (world.linkN > storedLinkMax) storedLinkMax = world.linkN;
 }
 const msPerFrame = Number(process.hrtime.bigint() - t0) / 1e6 / FRAMES;
 
 const s = settleStats(world);
-console.log("0.2.2 thermal bench  node=" + process.version + "  " + W + "x" + H);
+console.log("0.2.3 review bench  node=" + process.version + "  " + W + "x" + H + "  seeded");
 console.log("n=" + world.n + "  rBar=" + world.rBar.toFixed(1));
 console.log("throughput: " + msPerFrame.toFixed(2) + " ms/frame (" + (1000 / msPerFrame).toFixed(0) + " fps headroom) at " + FRAMES + " frames / 60 s sim");
 console.log("after settle: NaN=" + scanNaN(world) + "  max|v|=" + s.maxV.toFixed(0) + "  mean|v|=" + s.meanV.toFixed(1));
 console.log("distribution: above line=" + s.above + "  fully submerged=" + s.deep + "  mean sub. frac=" + s.meanF.toFixed(2));
 console.log("pairs: max per substep=" + pairMax + "  (buffer cap=" + world.pairA.length + ")");
+console.log("links: max effective=" + linkMax + "  max cold=" + storedLinkMax + "  (buffer cap=" + world.linkA.length + ")");
 
 // --- physics sanity: exact submerged fraction ---
 const eps = 1e-9;
@@ -75,13 +87,14 @@ eng.setTypicalRadius(heavy, 8);
 eng.spawnBed(heavy);
 const PROF_FRAMES = 600;
 const t2 = process.hrtime.bigint();
-let heavyPairs = 0;
+let heavyPairs = 0, heavyLinks = 0;
 for (let f = 0; f < PROF_FRAMES; f++) {
 	eng.stepWorld(heavy, 1 / 60);
 	if (heavy.pairN > heavyPairs) heavyPairs = heavy.pairN;
+	if (heavy.linkActiveN > heavyLinks) heavyLinks = heavy.linkActiveN;
 }
 const profMs = Number(process.hrtime.bigint() - t2) / 1e6 / PROF_FRAMES;
-console.log("profile near-cap: n=" + heavy.n + "  " + profMs.toFixed(2) + " ms/frame  peak pairs=" + heavyPairs + " / " + heavy.pairA.length);
+console.log("profile near-cap: n=" + heavy.n + "  " + profMs.toFixed(2) + " ms/frame  peak pairs=" + heavyPairs + "  peak links=" + heavyLinks + " / " + heavy.linkA.length);
 
 // --- archimedes equilibrium: a free bead settles at submerged frac = rho ---
 // one bead per world, dropped into still water, 20 s to settle

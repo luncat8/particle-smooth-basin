@@ -7,7 +7,7 @@ const ctx = canvas.getContext("2d", { alpha: false });
 const statsEl = $("stats");
 let world = null;
 let assets = null;
-let dpr = Math.min(window.devicePixelRatio || 1, 2);
+let dpr = 1;
 const sprites = buildSprites();
 const temperatureSprites = buildTemperatureSprites();
 const SCENARIO_PRESETS = {
@@ -37,6 +37,7 @@ function syncArchControl(value) {
 
 function fit() {
 	const W = window.innerWidth, H = window.innerHeight;
+	dpr = Math.min(window.devicePixelRatio || 1, 2);
 	canvas.width = Math.round(W * dpr);
 	canvas.height = Math.round(H * dpr);
 	canvas.style.width = W + "px";
@@ -63,11 +64,10 @@ function updateCountLabel() {
 }
 
 function updateStats() {
-	let totalTemp = 0, activeLinks = 0;
+	let totalTemp = 0;
 	for (let i = 0; i < world.n; i++) totalTemp += world.temp[i];
-	for (let k = 0; k < world.linkN; k++) if (world.linkK[k] >= 0.04) activeLinks++;
 	const avgTemp = world.n ? totalTemp / world.n : 0;
-	statsEl.textContent = world.n + " BEADS · " + activeLinks + " ACTIVE LINKS · MEAN T " + avgTemp.toFixed(2) + " · " + Math.round(fpsEMA) + " FPS";
+	statsEl.textContent = world.n + " BEADS · " + world.linkActiveN + " ACTIVE LINKS · MEAN T " + avgTemp.toFixed(2) + " · " + Math.round(fpsEMA) + " FPS";
 }
 
 fit();
@@ -98,12 +98,13 @@ canvas.addEventListener("pointermove", e => {
 	canvas.style.cursor = hit >= 0 ? "grab" : "default";
 });
 
-function endPointer() {
-	pointerUp(world, performance.now());
+function endPointer(now) {
+	pointerUp(world, now);
 	canvas.style.cursor = "default";
 }
-canvas.addEventListener("pointerup", endPointer);
-canvas.addEventListener("pointercancel", endPointer);
+canvas.addEventListener("pointerup", () => endPointer(performance.now()));
+canvas.addEventListener("pointercancel", () => endPointer(Infinity));
+canvas.addEventListener("pointerleave", () => { if (!world.pointer.down) canvas.style.cursor = "default"; });
 canvas.addEventListener("contextmenu", e => e.preventDefault());
 
 $("sourceRate").addEventListener("input", e => {

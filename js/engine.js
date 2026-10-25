@@ -17,10 +17,14 @@ const ARCH_SIZE_RANGE = 10;
 const DRAG_AIR = 0.05;		// 1/s
 const DRAG_WATER = 2.7;		// 1/s, scaled by submerged fraction^2
 const SUBSTEP = 1 / 120;
+const WAVE_SUBSTEPS = 2;	// wave field advances at 60 Hz in fixed steps
 const MAX_STEPS = 6;
 const CONTACT_ITER = 3;
 const CONTACT_SOFT = 0.55;	// 0..1 squishiness of contacts
 const CONTACT_DAMP = 1;		// 0..1 inelasticity of touching pairs (hydrogel: no bounce)
+const LINK_CREATE_RATIO = 1.08;	// bond creation distance / sum of radii
+const LINK_HEAT_MAX = 0.55;
+const LINK_ACTIVE_K = 0.02;	// weaker bonds keep their rest but skip the constraint solver
 const MAX_SPEED = 1600;		// px/s
 const WAVE_REACT = 22;		// px/s per ripple kick unit: reaction impulse on the bead
 const PAL_LIGHT = 6;		// sprite palette: 0..5 light beads, 6..11 deep
@@ -50,15 +54,16 @@ function createWorld(W, H) {
 		alpha: new Float64Array(cap), pal: new Uint8Array(cap),
 		wave: { n: 0, dx: 10, x0: 0, h: null, vh: null, ld: null, rd: null },
 		head: null, nxt: null, gw: 0, gh: 0,
+		cell: new Int32Array(cap), cellX: new Int32Array(cap), cellY: new Int32Array(cap),
 		pairA: new Int32Array(cap * 8), pairB: new Int32Array(cap * 8),
-		pairN: 0,
+		pairR: new Float64Array(cap * 8), pairN: 0,
 		pairRF: 1.25,		// includes near-contact heat and thermal-bond candidates
-		linkLookupSlot: 0, linkLookupKey: 0, linkLookupValue: -1,
 		linkA: new Int32Array(cap * 8), linkB: new Int32Array(cap * 8),
-		linkRest: new Float32Array(cap * 8), linkK: new Float32Array(cap * 8), linkN: 0,
-		linkHashKeys: null, linkHashValues: null, linkHashMask: 0,
-		pointer: { x: 0, y: 0, px: 0, py: 0, vx: 0, vy: 0, down: false, active: false, grab: -1, moved: 0, downT: 0 },
-		acc: 0,
+		linkRest: new Float32Array(cap * 8), linkK: new Float32Array(cap * 8), linkN: 0, linkActiveN: 0,
+		linkHashKeys: null, linkHashRest: null, linkHashMask: 0,
+		linkPrevKeys: null, linkPrevRest: null,
+		pointer: { x: 0, y: 0, px: 0, py: 0, vx: 0, vy: 0, down: false, grab: -1, moved: 0, downT: 0 },
+		acc: 0, waveTick: 0,
 	};
 	initLinkHash(world);
 	resizeWorld(world, W, H);
@@ -175,7 +180,12 @@ function spawnBed(world) {
 	const t = world.tank;
 	world.n = 0;
 	world.linkN = 0;
-	if (world.linkHashKeys) world.linkHashKeys.fill(-1);
+	world.linkActiveN = 0;
+	world.waveTick = 0;
+	if (world.linkHashKeys) {
+		world.linkHashKeys.fill(-1);
+		world.linkPrevKeys.fill(-1);
+	}
 	world.rBar = world.typicalRadius;
 	syncRMax(world);
 	world.acc = 0;
@@ -215,6 +225,7 @@ function setConductionRate(world, value) {
 function setSizeResponse(world, value) {
 	world.sizeResponse = clamp(value, -1, 1);
 	syncRMax(world);
+	refreshThermalSizes(world);
 }
 
 function setArchSize(world, value) {
@@ -229,6 +240,7 @@ function setTypicalRadius(world, value) {
 	world.typicalRadius = clamp(value, 8, 22);
 	world.rBar = world.typicalRadius;
 	syncRMax(world);
+	refreshThermalSizes(world);
 }
 
 function setFillFraction(world, value) {
@@ -237,7 +249,7 @@ function setFillFraction(world, value) {
 
 function setMassScale(world, value) {
 	world.massScale = clamp(value, 0.4, 2.5);
-	for (let i = 0; i < world.n; i++) world.invM[i] = 1 / (world.massScale * world.dens[i] * world.r[i] * world.r[i]);
+	refreshThermalSizes(world);
 }
 
 function addBead(world, x, y) {
@@ -272,44 +284,50 @@ function buildGrid(world) {
 	if (!world.nxt || world.nxt.length < world.n) world.nxt = new Int32Array(Math.max(64, world.n * 2));
 	const nxt = world.nxt;
 	const x = world.x, y = world.y;
+	const cell = world.cell, cellX = world.cellX, cellY = world.cellY;
 	for (let i = 0; i < world.n; i++) {
 		let cx = (x[i] / cs) | 0; if (cx < 0) cx = 0; else if (cx >= gw) cx = gw - 1;
 		let cy = (y[i] / cs) | 0; if (cy < 0) cy = 0; else if (cy >= gh) cy = gh - 1;
 		const c = cy * gw + cx;
+		cell[i] = c; cellX[i] = cx; cellY[i] = cy;
 		nxt[i] = head[c];
 		head[c] = i;
 	}
 }
 
+function growPairBuffers(world) {
+	const cap = world.pairA.length * 2;
+	const a = new Int32Array(cap), b = new Int32Array(cap), r = new Float64Array(cap);
+	a.set(world.pairA); b.set(world.pairB); r.set(world.pairR);
+	world.pairA = a; world.pairB = b; world.pairR = r;
+	const la = new Int32Array(cap), lb = new Int32Array(cap);
+	const rest = new Float32Array(cap), k = new Float32Array(cap);
+	la.set(world.linkA); lb.set(world.linkB);
+	rest.set(world.linkRest); k.set(world.linkK);
+	world.linkA = la; world.linkB = lb; world.linkRest = rest; world.linkK = k;
+}
+
 function pairTest(world, i, j, rf) {
 	const dx = world.x[j] - world.x[i], dy = world.y[j] - world.y[i];
-	const rr = (world.r[i] + world.r[j]) * rf;
+	const sumR = world.r[i] + world.r[j], rr = sumR * rf;
 	if (dx * dx + dy * dy >= rr * rr) return;
-	if (world.pairN >= world.pairA.length) {
-		// grows only when jammed beyond initial capacity, never per frame
-		const cap = world.pairA.length * 2;
-		const a = new Int32Array(cap), b = new Int32Array(cap);
-		a.set(world.pairA); b.set(world.pairB);
-		world.pairA = a; world.pairB = b;
-	}
+	if (world.pairN >= world.pairA.length) growPairBuffers(world);	// exceptional jam
 	const k = world.pairN++;
 	world.pairA[k] = i;
 	world.pairB[k] = j;
+	world.pairR[k] = sumR;
 }
 
 /* each unordered pair visited once: same cell via the list tail, neighbor
    cells only in +x and +y direction */
 function collectPairs(world) {
 	world.pairN = 0;
-	const cs = 2 * world.rMax * world.pairRF;
 	const gw = world.gw, gh = world.gh;
 	const head = world.head, nxt = world.nxt;
-	const x = world.x, y = world.y;
+	const cell = world.cell, cellX = world.cellX, cellY = world.cellY;
 	const rf = world.pairRF;
 	for (let i = 0; i < world.n; i++) {
-		let cx = (x[i] / cs) | 0; if (cx < 0) cx = 0; else if (cx >= gw) cx = gw - 1;
-		let cy = (y[i] / cs) | 0; if (cy < 0) cy = 0; else if (cy >= gh) cy = gh - 1;
-		const c = cy * gw + cx;
+		const c = cell[i], cx = cellX[i], cy = cellY[i];
 		for (let j = nxt[i]; j !== -1; j = nxt[j]) pairTest(world, i, j, rf);
 		if (cx + 1 < gw) {
 			for (let j = head[c + 1]; j !== -1; j = nxt[j]) pairTest(world, i, j, rf);
@@ -327,56 +345,106 @@ function collectPairs(world) {
 	}
 }
 
-/* Persistent pair bonds use a bounded open-addressed table. The table is
-   cleared only when a new bed is dealt; stable particle indices keep keys valid. */
+/* Thermal bonds are rebuilt from the current pair list each substep.
+   Two open-addressed tables preserve each cold pair's rest distance without
+   accumulating warm or separated links. Warm pairs thaw immediately. */
 function initLinkHash(world) {
 	if (world.linkHashKeys) return;
 	let size = 1;
-	while (size < world.cap * 32) size *= 2;
+	while (size < world.pairA.length * 2) size *= 2;
 	world.linkHashKeys = new Int32Array(size);
-	world.linkHashValues = new Int32Array(size);
+	world.linkPrevKeys = new Int32Array(size);
+	world.linkHashRest = new Float32Array(size);
+	world.linkPrevRest = new Float32Array(size);
 	world.linkHashKeys.fill(-1);
-	world.linkHashValues.fill(-1);
+	world.linkPrevKeys.fill(-1);
 	world.linkHashMask = size - 1;
 }
 
-function findLink(world, a, b) {
-	const cap = world.cap;
+function linkKey(world, a, b) {
 	if (a > b) { const swap = a; a = b; b = swap; }
-	const key = a * cap + b;
-	let slot = (Math.imul(key, 2654435761) >>> 0) & world.linkHashMask;
+	return a * world.cap + b;
+}
+
+function linkSlot(world, key) {
+	return (Math.imul(key, 2654435761) >>> 0) & world.linkHashMask;
+}
+
+function findLinkRest(world, key) {
+	const keys = world.linkPrevKeys, mask = world.linkHashMask;
+	let slot = linkSlot(world, key);
+	while (keys[slot] !== -1 && keys[slot] !== key) slot = (slot + 1) & mask;
+	return keys[slot] === key ? world.linkPrevRest[slot] : -1;
+}
+
+function storeLinkRest(world, key, rest) {
+	const keys = world.linkHashKeys, mask = world.linkHashMask;
+	let slot = linkSlot(world, key);
+	while (keys[slot] !== -1 && keys[slot] !== key) slot = (slot + 1) & mask;
+	keys[slot] = key;
+	world.linkHashRest[slot] = rest;
+}
+
+function swapLinkHash(world) {
 	const keys = world.linkHashKeys;
-	while (keys[slot] !== -1 && keys[slot] !== key) slot = (slot + 1) & world.linkHashMask;
-	world.linkLookupSlot = slot;
-	world.linkLookupKey = key;
-	world.linkLookupValue = keys[slot] === key ? world.linkHashValues[slot] : -1;
+	world.linkHashKeys = world.linkPrevKeys;
+	world.linkPrevKeys = keys;
+	const rest = world.linkHashRest;
+	world.linkHashRest = world.linkPrevRest;
+	world.linkPrevRest = rest;
+	world.linkHashKeys.fill(-1);
 }
 
 function collectThermalBonds(world) {
 	initLinkHash(world);
-	const temp = world.temp, x = world.x, y = world.y, r = world.r;
+	swapLinkHash(world);
+	const oldLinkN = world.linkN;
+	world.linkN = 0;
+	world.linkActiveN = 0;
+	const temp = world.temp, x = world.x, y = world.y;
+	const pairA = world.pairA, pairB = world.pairB, pairR = world.pairR;
+	const createR2 = LINK_CREATE_RATIO * LINK_CREATE_RATIO;
+	const breakR2 = world.pairRF * world.pairRF;
 	for (let k = 0; k < world.pairN; k++) {
-		const a = world.pairA[k], b = world.pairB[k];
-		if ((temp[a] + temp[b]) * 0.5 >= 0.55) continue;
+		const a = pairA[k], b = pairB[k];
+		const heat = (temp[a] + temp[b]) * 0.5;
+		if (heat >= LINK_HEAT_MAX) continue;
 		const dx = x[b] - x[a], dy = y[b] - y[a];
-		const rr = r[a] + r[b];
 		const d2 = dx * dx + dy * dy;
-		if (d2 >= rr * rr * 1.1664 || d2 < 1e-9) continue;
-		findLink(world, a, b);
-		if (world.linkLookupValue >= 0 || world.linkN >= world.linkA.length) continue;
+		const sumR = pairR[k], sumR2 = sumR * sumR;
+		if (d2 < 1e-9 || d2 >= sumR2 * breakR2) continue;
+		const key = linkKey(world, a, b);
+		let rest = findLinkRest(world, key);
+		if (rest < 0) {
+			if (d2 >= sumR2 * createR2) continue;
+			rest = Math.max(1.01, Math.sqrt(d2 / sumR2));
+		}
+		storeLinkRest(world, key, rest);
+		const cold = clamp((LINK_HEAT_MAX - heat) / 0.40, 0, 1);
+		const stiffness = cold * cold * 0.72;
 		const link = world.linkN++;
 		world.linkA[link] = a;
 		world.linkB[link] = b;
-		world.linkRest[link] = Math.max(1.01, Math.sqrt(d2) / rr);
-		world.linkK[link] = 0;
-		world.linkHashKeys[world.linkLookupSlot] = world.linkLookupKey;
-		world.linkHashValues[world.linkLookupSlot] = link;
+		world.linkRest[link] = rest;
+		world.linkK[link] = stiffness;
 	}
-	for (let k = 0; k < world.linkN; k++) {
-		const heat = (temp[world.linkA[k]] + temp[world.linkB[k]]) * 0.5;
-		const cold = clamp((0.55 - heat) / 0.40, 0, 1);
-		world.linkK[k] = cold * cold * 0.72;
+	if (oldLinkN > world.linkN) world.linkK.fill(0, world.linkN, oldLinkN);
+	compactActiveLinks(world);
+}
+
+function compactActiveLinks(world) {
+	const a = world.linkA, b = world.linkB, rest = world.linkRest, k = world.linkK;
+	let active = 0;
+	for (let i = 0; i < world.linkN; i++) {
+		if (k[i] < LINK_ACTIVE_K) continue;
+		if (active !== i) {
+			const ai = a[i], bi = b[i], ri = rest[i], ki = k[i];
+			a[i] = a[active]; b[i] = b[active]; rest[i] = rest[active]; k[i] = k[active];
+			a[active] = ai; b[active] = bi; rest[active] = ri; k[active] = ki;
+		}
+		active++;
 	}
+	world.linkActiveN = active;
 }
 
 function exchangeHeat(world, h) {
@@ -389,8 +457,9 @@ function exchangeHeat(world, h) {
 		if (sourceRate > 0) {
 			const py = world.y[i];
 			if (py < topEnd) {
-				const weight = 1 - py / topEnd;
-				const target = 0.02 + 0.18 * (py / topEnd);
+				const u = clamp(py / topEnd, 0, 1);
+				const weight = 1 - u;
+				const target = 0.02 + 0.18 * u;
 				temp[i] += (target - temp[i]) * (1 - Math.exp(-sourceRate * weight * h));
 			} else if (py > bottomStart) {
 				const u = clamp((py - bottomStart) / (world.H - bottomStart), 0, 1);
@@ -419,14 +488,19 @@ function updateThermalSize(world, i) {
 	world.invM[i] = 1 / (world.massScale * world.dens[i] * r * r);
 }
 
+/* Control changes refresh size immediately; the per-substep refresh is
+   skipped entirely when thermal sizing is off. */
+function refreshThermalSizes(world) {
+	for (let i = 0; i < world.n; i++) updateThermalSize(world, i);
+}
+
 /* ------------------------- physics ------------------------- */
 
 /* Soft, mass-weighted contact relaxation plus thermal distance bonds and walls. */
 function solveLinks(world) {
 	const x = world.x, y = world.y, r = world.r, invM = world.invM;
-	for (let k = 0; k < world.linkN; k++) {
+	for (let k = 0; k < world.linkActiveN; k++) {
 		const stiffness = world.linkK[k];
-		if (stiffness <= 0) continue;
 		const a = world.linkA[k], b = world.linkB[k];
 		const dx = x[b] - x[a], dy = y[b] - y[a];
 		const d2 = dx * dx + dy * dy;
@@ -441,13 +515,13 @@ function solveLinks(world) {
 
 function solveContacts(world) {
 	const x = world.x, y = world.y, r = world.r, invM = world.invM;
-	const pairA = world.pairA, pairB = world.pairB, pairN = world.pairN;
+	const pairA = world.pairA, pairB = world.pairB, pairR = world.pairR, pairN = world.pairN;
 	const t = world.tank;
 	for (let it = 0; it < CONTACT_ITER; it++) {
 		for (let k = 0; k < pairN; k++) {
 			const a = pairA[k], b = pairB[k];
 			const dx = x[b] - x[a], dy = y[b] - y[a];
-			const rr = r[a] + r[b];
+			const rr = pairR[k];
 			const d2 = dx * dx + dy * dy;
 			if (d2 >= rr * rr || d2 < 1e-9) continue;
 			const d = Math.sqrt(d2);
@@ -457,7 +531,7 @@ function solveContacts(world) {
 			x[a] -= nx * corr * wa; y[a] -= ny * corr * wa;
 			x[b] += nx * corr * wb; y[b] += ny * corr * wb;
 		}
-		solveLinks(world);
+		if (world.linkActiveN) solveLinks(world);
 		for (let i = 0; i < world.n; i++) {
 			const rad = r[i];
 			if (x[i] < t.x0 + rad) x[i] = t.x0 + rad;
@@ -473,13 +547,13 @@ function solveContacts(world) {
    contacts) which keeps a squeezed pile shimmering forever; hydrogel is
    inelastic, so damp that away after velocities are derived */
 function dampContacts(world) {
-	const x = world.x, y = world.y, r = world.r, invM = world.invM;
+	const x = world.x, y = world.y, invM = world.invM;
 	const vx = world.vx, vy = world.vy;
-	const pairA = world.pairA, pairB = world.pairB, pairN = world.pairN;
+	const pairA = world.pairA, pairB = world.pairB, pairR = world.pairR, pairN = world.pairN;
 	for (let k = 0; k < pairN; k++) {
 		const a = pairA[k], b = pairB[k];
 		const dx = x[b] - x[a], dy = y[b] - y[a];
-		const rr = r[a] + r[b];
+		const rr = pairR[k];
 		const d2 = dx * dx + dy * dy;
 		if (d2 >= rr * rr || d2 < 1e-9) continue;
 		const d = Math.sqrt(d2);
@@ -489,9 +563,8 @@ function dampContacts(world) {
 		vx[a] -= jn * nx * invM[a]; vy[a] -= jn * ny * invM[a];
 		vx[b] += jn * nx * invM[b]; vy[b] += jn * ny * invM[b];
 	}
-	for (let k = 0; k < world.linkN; k++) {
+	for (let k = 0; k < world.linkActiveN; k++) {
 		const stiffness = world.linkK[k];
-		if (stiffness <= 0) continue;
 		const a = world.linkA[k], b = world.linkB[k];
 		const dx = x[b] - x[a], dy = y[b] - y[a];
 		const d2 = dx * dx + dy * dy;
@@ -532,13 +605,15 @@ function substep(world, h) {
 	const r = world.r, dens = world.dens, frac = world.frac;
 	const grav = world.grav;
 	const surf = world.waterY;
-	const ptrOn = world.pointer.active;
+	const ptrOn = world.pointer.down;
 
 	// 1) gravity vs Archimedes + drag, then integrate. archSize couples
 	// buoyancy to radius; the lift multiplier is bounded for extreme exponents.
+	if (world.sizeResponse !== 0) {
+		for (let i = 0; i < n; i++) updateThermalSize(world, i);
+	}
 	const arch = world.archSize, buoyancy = world.buoyancy, rBarInv = 1 / world.rBar;
 	for (let i = 0; i < n; i++) {
-		updateThermalSize(world, i);
 		px[i] = x[i]; py[i] = y[i];
 		const f = submergedFrac(y[i] - surf, r[i]);
 		frac[i] = f;
@@ -585,7 +660,7 @@ function substep(world, h) {
 function stepWorld(world, dt) {
 	if (dt > 0.05) dt = 0.05;
 	const ptr = world.pointer;
-	if (ptr.active) {
+	if (ptr.down) {
 		ptr.vx = 0.5 * ptr.vx + 0.5 * (ptr.x - ptr.px) / Math.max(dt, 1e-3);
 		ptr.vy = 0.5 * ptr.vy + 0.5 * (ptr.y - ptr.py) / Math.max(dt, 1e-3);
 	}
@@ -597,9 +672,12 @@ function stepWorld(world, dt) {
 		substep(world, SUBSTEP);
 		world.acc -= SUBSTEP;
 		steps++;
+		if (++world.waveTick >= WAVE_SUBSTEPS) {
+			world.waveTick = 0;
+			waveStep(world);
+		}
 	}
 	if (steps === MAX_STEPS) world.acc = 0;	// drop backlog on slow frames
-	waveStep(world);
 }
 
 /* ------------------------- pointer ------------------------- */
@@ -618,13 +696,13 @@ function pointerMove(world, x, y) {
 	const ptr = world.pointer;
 	if (ptr.down && Math.abs(x - ptr.x) + Math.abs(y - ptr.y) > 2) ptr.moved += 2;
 	ptr.x = x; ptr.y = y;
-	ptr.active = true;
 }
 
 function pointerDown(world, x, y, now) {
 	const ptr = world.pointer;
 	ptr.x = x; ptr.y = y; ptr.px = x; ptr.py = y;
-	ptr.down = true; ptr.active = true;
+	ptr.vx = 0; ptr.vy = 0;
+	ptr.down = true;
 	ptr.moved = 0; ptr.downT = now;
 	ptr.grab = pickBead(world, x, y, 16);
 	if (ptr.grab >= 0) {
@@ -636,6 +714,7 @@ function pointerDown(world, x, y, now) {
 
 function pointerUp(world, now) {
 	const ptr = world.pointer;
+	ptr.vx = 0; ptr.vy = 0;
 	if (ptr.grab >= 0) ptr.grab = -1;
 	else if (ptr.moved < 7 && now - ptr.downT < 350) addBead(world, ptr.x, ptr.y);
 	ptr.down = false;

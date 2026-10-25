@@ -4,7 +4,7 @@ A file://-friendly particle basin experiment. Open `index.html` directly in a mo
 
 ## Controls
 
-- Drag beads to grab/toss; click the basin to add a bead.
+- Drag beads to grab/toss; click the basin to add a bead. Hovering changes the cursor but does not stir; hold/drag to apply the brush force.
 - `SPACE` splashes the bed; `R` re-deals it using the current settings.
 - **Thermal sources** relax beads toward the cold upper zone and hot lower zone. **Conduction** independently sets heat transfer between nearby beads; both rates range from 0–4×.
 - **Thermal size** controls how temperature changes collision and drawn radius. At full positive response, the radius at temperature 1 is twice the radius at temperature 0; negative response reverses the effect.
@@ -15,8 +15,8 @@ A file://-friendly particle basin experiment. Open `index.html` directly in a mo
 - **Average mass** scales inertia while the independent random density continues to determine buoyancy.
 - **Temperature hue** switches from density colors to the normalized 0–1 temperature palette.
 
-The upper part of the basin is a cold gradient source; the lower part adds heat. Cold nearby beads form distance-constraint bonds that soften as the pair warms.
+The upper part of the basin is a cold gradient source; the lower part adds heat. Cold nearby beads form distance-constraint bonds that soften as the pair warms and thaw once warm or stretched beyond neighbor range.
 
 ## Development checks
 
-Run `node experiments/bench.js` for physics sanity and throughput checks. Run `node experiments/thermal.js` and `node experiments/smoke.js` for focused thermal and UI checks. The engine is DOM-free and can be required directly by Node.
+Run `node experiments/bench.js` for a seeded physics throughput and link-capacity baseline. Run `node experiments/thermal.js` for thermal, pointer, wave-step, and bond-lifetime checks, and `node experiments/smoke.js` for classic-script UI checks. The engine is DOM-free and can be required directly by Node.

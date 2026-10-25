@@ -26,6 +26,8 @@
   canvases (drawImage with per-bead alpha). gradients + hsla strings per
   bead per frame are the typical hot-path allocation killers in these
   prototypes.
+- static tank outlines and rim ticks belong in cached `Path2D` objects made
+  on resize; only the wave surface path changes each frame.
 
 ## tooling
 
@@ -36,3 +38,19 @@
 - the sim engine stays DOM-free and guarded by `module.exports`, so
   experiments/ can require it directly — bench and sanity checks run in
   milliseconds without a browser.
+
+## simulation state
+
+- persistent pair constraints need an explicit death path. a hash that only
+  deduplicates new bonds accumulates every warm or separated pair forever;
+  the solver then still scans dead links and may pull distant beads together.
+  rebuild the cold-bond set from the broadphase each substep, carry rest
+  distances in a double-buffered key table, and partition effective links to
+  the front for solver/render.
+- cache what broadphase already computed: grid cell indices and summed pair
+  radii. contact relaxation otherwise repeats divisions and radius loads in
+  every particle iteration.
+- a pointer `active` flag set on first hover is not the same as `down`. use
+  pointer-down state for forces; otherwise an idle cursor keeps stirring.
+- advance auxiliary fixed-rate fields (waves) inside the fixed substep loop,
+  not once per rendered frame, or waves run at the display refresh rate.
