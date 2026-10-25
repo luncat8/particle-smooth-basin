@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+<title>Hydrogel Buoyancy Tank — Archimedes Playground</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#0b1418}
+  canvas{display:block;width:100vw;height:100vh;touch-action:none;cursor:default}
+  .hud,.hint,.stats{position:fixed;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    user-select:none;-webkit-user-select:none;pointer-events:none;z-index:2}
+  .hud{left:20px;top:18px}
+  .hud h1{margin:0;font-size:12px;font-weight:700;letter-spacing:.28em;color:#9fd8e8}
+  .hud p{margin:6px 0 0;font-size:10px;letter-spacing:.12em;color:rgba(170,215,230,.55)}
+  .hint{left:20px;bottom:16px;font-size:10px;letter-spacing:.10em;color:rgba(170,215,230,.5);transition:color .4s}
+  .hint b{color:rgba(210,240,250,.78);font-weight:600}
+  .hint.warn{color:#ff9d8a}
+  .stats{right:20px;bottom:16px;font-size:10px;letter-spacing:.12em;color:rgba(170,215,230,.4);text-align:right}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud">
+  <h1>HYDROGEL&nbsp;&middot;&nbsp;BUOYANCY TANK</h1>
+  <p>ARCHIMEDES PLAYGROUND &mdash; RANDOM MASS &amp; SIZE, SOFT COLLISIONS</p>
+</div>
+<div class="hint" id="hint">drag a bead to toss it &middot; click water to add one &middot; <b>SPACE</b> splash &middot; <b>R</b> resettle</div>
+<div class="stats" id="stats"></div>
+<script>
+"use strict";
+/* =====================================================================
+   HYDROGEL BUOYANCY TANK
+   - water surface at 50% of the screen height
+   - Archimedes force from the TRUE submerged-area fraction of each disc
+       a = g * (1 - (rho_water * f) / rho_bead),  f = A_submerged / (pi r^2)
+     -> light beads are pushed out of the water, heavy beads sink
+   - random particle weight (density) and size, ~50% floaters /
+     15% near-neutral hoverers / 35% sinkers
+   - smooth collision forces: position-based dynamics with a soft
+     correction factor, no restitution -> squishy gel contacts
+   - drawn radius is a bit smaller than the collision radius, so packed
+     beads keep small visual gaps
+   - bead population fills ~70% of the water (area coverage)
+   ===================================================================== */
+
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const TAU    = Math.PI * 2;
+
+let W = 0, H = 0, DPR = 1;
+
+/* ------------------------- tunables ------------------------- */
+const WATER_FRAC       = 0.50;   // waterline: 50% of screen height
+const FILL_FRAC        = 0.68;   // beads fill ~70% of the water
+const TARGET_PARTICLES = 650;    // population budget (drives bead size)
+const RHO_WATER        = 1.0;
+const DRAG_AIR         = 0.05;   // 1/s
+const DRAG_WATER       = 2.70;   // 1/s, scaled by submerged fraction^2
+const RENDER_SHRINK    = 0.88;   // draw radius vs collision radius -> visual gaps
+const SUBSTEP          = 1/120;  // physics substep
+const MAX_STEPS        = 6;      // max substeps per frame
+const CONTACT_ITER     = 3;      // soft-contact relaxation iterations
+const CONTACT_SOFT     = 0.55;   // 0..1 squishiness of contacts
+
+let GRAV = 1850;                 // px/s^2, rescaled with screen height
+
+/* ------------------------- tank / world ------------------------- */
+const TANK  = { x0:0, x1:0, y0:0, y1:0 };
+let waterY  = 0;
+let rBar    = 14, rMax = 18;
+
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;  H = window.innerHeight;
+  canvas.width  = Math.round(W * DPR);
+  canvas.height = Math.round(H * DPR);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+  TANK.x0 = W * 0.055;  TANK.x1 = W * 0.945;
+  TANK.y0 = H * 0.155;  TANK.y1 = H * 0.935;
+  waterY  = H * WATER_FRAC;
+
+  GRAV = 1850 * Math.min(1.25, Math.max(0.75, H / 950));
+  initWave();
+  makeBackground();
+}
+
+/* ------------------------- wave field -------------------------
+   1-D spring columns along the waterline. Beads crossing the surface
+   kick the columns -> ripples. The SAME field is fed back into the
+   buoyancy test, so bobbing beads and ripples genuinely interact.   */
+const wave = { n:0, dx:10, x0:0, h:null, vh:null, ld:null, rd:null };
+
+function initWave(){
+  const innerW = TANK.x1 - TANK.x0;
+  wave.dx = Math.max(7, innerW / 160);
+  wave.n  = Math.floor(innerW / wave.dx) + 1;
+  wave.x0 = TANK.x0;
+  wave.h  = new Float32Array(wave.n);
+  wave.vh = new Float32Array(wave.n);
+  wave.ld = new Float32Array(wave.n);
+  wave.rd = new Float32Array(wave.n);
+}
+
+function surfaceY(x){
+  const t = (x - wave.x0) / wave.dx;
+  const i = Math.floor(t);
+  if (i < 0 || i >= wave.n - 1) return waterY;
+  const f = t - i;
+  return waterY - (wave.h[i] * (1 - f) + wave.h[i + 1] * f);
+}
+
+function disturb(x, amount){
+  const i = Math.floor((x - wave.x0) / wave.dx);
+  if (i < 0 || i >= wave.n) return;
+  amount = Math.max(-1.4, Math.min(1.4, amount));
+  wave.vh[i] += amount;
+  if (i + 1 < wave.n) wave.vh[i + 1] += amount * 0.6;
+  if (i - 1 >= 0)     wave.vh[i - 1] += amount * 0.6;
+}
+
+function waveStep(){
+  const K = 0.022, D = 0.018, S = 0.16, PASSES = 2, MAXH = 26;
+  const { h, vh, ld, rd, n } = wave;
+  for (let i = 0; i < n; i++){
+    vh[i] += -K * h[i] - D * vh[i];
+    h[i]  += vh[i];
+    if (h[i] >  MAXH){ h[i] =  MAXH; vh[i] *= 0.5; }
+    else if (h[i] < -MAXH){ h[i] = -MAXH; vh[i] *= 0.5; }
+  }
+  for (let p = 0; p < PASSES; p++){
+    for (let i = 0; i < n; i++){
+      if (i > 0)     { ld[i] = S * (h[i] - h[i - 1]); vh[i - 1] += ld[i]; }
+      if (i < n - 1) { rd[i] = S * (h[i] - h[i + 1]); vh[i + 1] += rd[i]; }
+    }
+    for (let i = 0; i < n; i++){
+      if (i > 0)     h[i - 1] += ld[i];
+      if (i < n - 1) h[i + 1] += rd[i];
+    }
+  }
+}
+
+/* ------------------------- particles ------------------------- */
+const parts = [];
+
+const LIGHT_COLORS = ['#8fe0dc','#a5ecd0','#f5b8cf','#c3b4f4','#f6d9a0','#bfe3f2'];
+const DEEP_COLORS  = ['#4fb6c9','#6f97dd','#b58ad6','#d99a63','#3fa98a','#7f7fd0'];
+
+function rollDensity(){
+  const u = Math.random();
+  if (u < 0.50) return 0.45 + Math.random() * 0.50;  // floats high
+  if (u < 0.65) return 0.95 + Math.random() * 0.13;  // ~neutral, hovers
+  return 1.10 + Math.random() * 1.00;                // sinks
+}
+
+function submergedFrac(d, r){
+  // area of a disc below a horizontal line, / pi r^2 ;  d = center depth
+  if (d <= -r) return 0;
+  if (d >=  r) return 1;
+  const q = d / r;
+  return 0.5 + (q * Math.sqrt(1 - q * q) + Math.asin(q)) / Math.PI;
+}
+
+function makeBead(x, y, r, density){
+  const pool = density < 1 ? LIGHT_COLORS : DEEP_COLORS;
+  parts.push({
+    x, y, prevx:x, prevy:y,
+    vx:(Math.random() - 0.5) * 30, vy:0,
+    r, density,
+    sprite: sprites[pool[(Math.random() * pool.length) | 0]],
+    alpha: 0.82 + Math.random() * 0.16,
+    f: 0
+  });
+  if (r > rMax) rMax = r;
+}
+
+/* checkerboard hex bed: big/small beads alternate -> almost no initial
+   overlap, mean bead area matches the ~70%-of-water coverage target   */
+function spawnBed(){
+  parts.length = 0; rMax = 0;
+  const innerW = TANK.x1 - TANK.x0;
+  const waterD = TANK.y1 - waterY;
+
+  // mean bead area for the big/small mix: pi * 1.027 * rBar^2  (~3.226 rBar^2)
+  rBar = Math.sqrt(FILL_FRAC * innerW * waterD / (3.226 * TARGET_PARTICLES));
+  rBar = Math.min(26, Math.max(7.5, rBar));
+
+  const sx = 2.4 * rBar, sy = 1.87 * rBar;
+  const cols  = Math.max(4, Math.floor(innerW / sx));
+  const rows  = Math.max(3, Math.round((TARGET_PARTICLES) / cols));
+
+  for (let row = 0; row < rows; row++){
+    const y   = TANK.y1 - (row + 0.6) * sy;
+    for (let col = 0; col < cols; col++){
+      const x = TANK.x0 + (col + 0.5 + (row % 2 ? 0.5 : 0)) * sx;
+      if (x > TANK.x1 - 2) continue;
+      const big = ((col + row) % 2) === 0;
+      const r   = big ? rBar * (1.05 + Math.random() * 0.23)
+                      : rBar * (0.72 + Math.random() * 0.23);
+      makeBead(x + (Math.random() - 0.5) * 3,
+               y + (Math.random() - 0.5) * 3,
+               r, rollDensity());
+    }
+  }
+  updateStats();
+}
+
+/* ------------------------- sprites -------------------------
+   Pre-rendered translucent hydrogel beads: dense refracting rim,
+   inner caustic focus, soft specular highlight.                      */
+const sprites = {};
+function rgba(hex, a){
+  const v = parseInt(hex.slice(1), 16);
+  return 'rgba(' + ((v >> 16) & 255) + ',' + ((v >> 8) & 255) + ',' + (v & 255) + ',' + a + ')';
+}
+function beadSprite(hex){
+  if (sprites[hex]) return sprites[hex];
+  const S = 96, R = S / 2;
+  const c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+
+  // translucent body, denser toward the rim
+  let gr = g.createRadialGradient(R * 0.72, R * 0.68, R * 0.08, R, R, R);
+  gr.addColorStop(0.00, rgba(hex, 0.06));
+  gr.addColorStop(0.45, rgba(hex, 0.22));
+  gr.addColorStop(0.78, rgba(hex, 0.50));
+  gr.addColorStop(0.94, rgba(hex, 0.68));
+  gr.addColorStop(1.00, rgba(hex, 0.78));
+  g.fillStyle = gr;
+  g.beginPath(); g.arc(R, R, R - 1, 0, TAU); g.fill();
+
+  // caustic focus where light refracts through (lower-right), clipped inside
+  g.save();
+  g.beginPath(); g.arc(R, R, R - 2, 0, TAU); g.clip();
+  gr = g.createRadialGradient(R * 1.22, R * 1.26, 1, R * 1.22, R * 1.26, R * 0.55);
+  gr.addColorStop(0, 'rgba(255,255,255,0.30)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, S, S);
+  g.restore();
+
+  // rim light
+  g.strokeStyle = 'rgba(255,255,255,0.26)';
+  g.lineWidth = 1.4;
+  g.beginPath(); g.arc(R, R, R - 1.6, 0, TAU); g.stroke();
+
+  // specular highlight, upper-left
+  g.save();
+  g.translate(R * 0.66, R * 0.52); g.rotate(-0.5);
+  gr = g.createRadialGradient(0, 0, 0.5, 0, 0, R * 0.24);
+  gr.addColorStop(0, 'rgba(255,255,255,0.95)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.beginPath(); g.ellipse(0, 0, R * 0.20, R * 0.115, 0, 0, TAU); g.fill();
+  g.restore();
+
+  // tiny secondary sparkle
+  g.fillStyle = 'rgba(255,255,255,0.5)';
+  g.beginPath(); g.arc(R * 0.80, R * 0.78, 1.6, 0, TAU); g.fill();
+
+  sprites[hex] = c;
+  return c;
+}
+
+/* ------------------------- spatial grid ------------------------- */
+let head = null, nxt = null, gw = 0, gh = 0;
+let pairA = null, pairB = null, pairCount = 0;
+
+function buildGrid(){
+  const cs = 2 * rMax;
+  gw = Math.max(1, Math.ceil(W / cs));
+  gh = Math.max(1, Math.ceil(H / cs));
+  const cells = gw * gh;
+  if (!head || head.length !== cells) head = new Int32Array(cells);
+  head.fill(-1);
+  if (!nxt || nxt.length < parts.length) nxt = new Int32Array(parts.length * 2);
+  if (!pairA || pairA.length < parts.length * 8){
+    pairA = new Int32Array(parts.length * 8);
+    pairB = new Int32Array(parts.length * 8);
+  }
+  for (let i = 0; i < parts.length; i++){
+    const p = parts[i];
+    let cx = (p.x / cs) | 0; if (cx < 0) cx = 0; else if (cx >= gw) cx = gw - 1;
+    let cy = (p.y / cs) | 0; if (cy < 0) cy = 0; else if (cy >= gh) cy = gh - 1;
+    const c = cy * gw + cx;
+    nxt[i]  = head[c];
+    head[c] = i;
+  }
+}
+
+function pairTest(i, j){
+  const a = parts[i], b = parts[j];
+  const dx = b.x - a.x, dy = b.y - a.y, rr = a.r + b.r;
+  if (dx * dx + dy * dy < rr * rr && pairCount < pairA.length){
+    pairA[pairCount] = i; pairB[pairCount] = j; pairCount++;
+  }
+}
+
+function collectPairs(){
+  pairCount = 0;
+  const cs = 2 * rMax;
+  for (let i = 0; i < parts.length; i++){
+    const p = parts[i];
+    let cx = (p.x / cs) | 0; if (cx < 0) cx = 0; else if (cx >= gw) cx = gw - 1;
+    let cy = (p.y / cs) | 0; if (cy < 0) cy = 0; else if (cy >= gh) cy = gh - 1;
+    const c = cy * gw + cx;
+    for (let j = nxt[i]; j !== -1; j = nxt[j]) pairTest(i, j);       // same cell
+    if (cx + 1 < gw) for (let j = head[c + 1]; j !== -1; j = nxt[j]) pairTest(i, j);
+    if (cy + 1 < gh){
+      const base = (cy + 1) * gw;
+      if (cx > 0)    for (let j = head[base + cx - 1]; j !== -1; j = nxt[j]) pairTest(i, j);
+                     for (let j = head[base + cx];     j !== -1; j = nxt[j]) pairTest(i, j);
+      if (cx + 1 < gw) for (let j = head[base + cx + 1]; j !== -1; j = nxt[j]) pairTest(i, j);
+    }
+  }
+}
+
+/* ------------------------- physics ------------------------- */
+function solveContacts(){
+  for (let it = 0; it < CONTACT_ITER; it++){
+    // soft, mass-weighted pair relaxation (smooth collision forces)
+    for (let k = 0; k < pairCount; k++){
+      const a = parts[pairA[k]], b = parts[pairB[k]];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const rr = a.r + b.r;
+      const d2 = dx * dx + dy * dy;
+      if (d2 >= rr * rr || d2 < 1e-9) continue;
+      const d  = Math.sqrt(d2);
+      const nx = dx / d, ny = dy / d;
+      const wa = 1 / (a.density * a.r * a.r);
+      const wb = 1 / (b.density * b.r * b.r);
+      const corr = (rr - d) * CONTACT_SOFT / (wa + wb);
+      a.x -= nx * corr * wa;  a.y -= ny * corr * wa;
+      b.x += nx * corr * wb;  b.y += ny * corr * wb;
+    }
+    // rigid glass walls (soft ceiling far above the rim)
+    for (let i = 0; i < parts.length; i++){
+      const p = parts[i], r = p.r;
+      if (p.x < TANK.x0 + r)      p.x = TANK.x0 + r;
+      else if (p.x > TANK.x1 - r) p.x = TANK.x1 - r;
+      if (p.y > TANK.y1 - r)      p.y = TANK.y1 - r;
+      if (p.y < -80 + r)          p.y = -80 + r;
+    }
+  }
+}
+
+function substep(h){
+  const n = parts.length;
+
+  // 1) forces: gravity vs Archimedes + drag, then integrate
+  for (let i = 0; i < n; i++){
+    const p  = parts[i];
+    p.prevx = p.x;  p.prevy = p.y;
+    const d = p.y - surfaceY(p.x);       // center depth below local surface
+    const f = submergedFrac(d, p.r);     // true submerged fraction
+    p.f = f;
+
+    // Archimedes: buoyant accel = g * (rho_water * f) / rho_bead
+    p.vy += GRAV * (1 - RHO_WATER * f / p.density) * h;
+
+    // viscous drag, much stronger underwater (f^2 scaling)
+    const k  = DRAG_AIR + DRAG_WATER * f * f;
+    const df = 1 / (1 + k * h);
+    p.vx *= df;  p.vy *= df;
+
+    if (pointer.active) applyPointer(p, h);
+
+    p.x += p.vx * h;  p.y += p.vy * h;
+  }
+
+  // 2) smooth contact solving
+  buildGrid();
+  collectPairs();
+  solveContacts();
+
+  // 3) derive velocities from corrected positions (no restitution -> calm)
+  const inv = 1 / h;
+  for (let i = 0; i < n; i++){
+    const p = parts[i];
+    p.vx = (p.x - p.prevx) * inv;
+    p.vy = (p.y - p.prevy) * inv;
+    if (p.vx >  1600) p.vx =  1600; else if (p.vx < -1600) p.vx = -1600;
+    if (p.vy >  1600) p.vy =  1600; else if (p.vy < -1600) p.vy = -1600;
+  }
+
+  // 4) beads near the surface kick the wave field -> ripples
+  for (let i = 0; i < n; i++){
+    const p = parts[i];
+    if (Math.abs(p.y - surfaceY(p.x)) < p.r * 0.9){
+      const amp = -p.vy * 0.0012 * p.density * (p.r / rBar)
+                * Math.min(1, Math.abs(p.vy) / 60);
+      if (amp !== 0) disturb(p.x, amp);
+    }
+  }
+}
+
+/* ------------------------- pointer ------------------------- */
+const pointer = { x:0, y:0, px:0, py:0, vx:0, vy:0, down:false, grab:-1, moved:0, downT:0, active:false };
+
+function applyPointer(p, h){
+  if (pointer.grab >= 0){
+    if (parts[pointer.grab] === p){
+      // soft spring toward the pointer; heavier beads lag a bit
+      const mf = Math.min(3, p.density * (p.r * p.r) / (rBar * rBar));
+      p.vx += ((pointer.x - p.x) * 300 - p.vx * 20) * h / mf;
+      p.vy += ((pointer.y - p.y) * 300 - p.vy * 20) * h / mf;
+    }
+    return;
+  }
+  // stir: radial push + pointer velocity coupling, inside a 150 px brush
+  const dx = p.x - pointer.x, dy = p.y - pointer.y;
+  const R2 = 150 * 150, d2 = dx * dx + dy * dy;
+  if (d2 < R2){
+    const d = Math.sqrt(d2) || 1;
+    const s = (1 - d / 150); const s2 = s * s;
+    p.vx += (dx / d * 2200 * s2 + pointer.vx * 4.5 * s2) * h;
+    p.vy += (dy / d * 1500 * s2 + pointer.vy * 4.5 * s2) * h;
+  }
+}
+
+function setPointer(e){
+  const r = canvas.getBoundingClientRect();
+  pointer.x = e.clientX - r.left;
+  pointer.y = e.clientY - r.top;
+  pointer.active = true;
+}
+
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  setPointer(e);
+  pointer.down = true; pointer.moved = 0; pointer.downT = performance.now();
+  // nearest bead within reach -> grab it
+  let best = -1, bd = Infinity;
+  for (let i = 0; i < parts.length; i++){
+    const p = parts[i];
+    const dx = p.x - pointer.x, dy = p.y - pointer.y;
+    const R = p.r + 16, dd = dx * dx + dy * dy;
+    if (dd < R * R && dd < bd){ bd = dd; best = i; }
+  }
+  if (best >= 0){
+    pointer.grab = best;
+    canvas.style.cursor = 'grabbing';
+    try { canvas.setPointerCapture(e.pointerId); } catch(_) {}
+  }
+});
+
+canvas.addEventListener('pointermove', e => {
+  setPointer(e);
+  if (pointer.down) pointer.moved += 2;
+  else {
+    // hover cursor
+    let hover = false;
+    for (let i = 0; i < parts.length; i++){
+      const p = parts[i];
+      const dx = p.x - pointer.x, dy = p.y - pointer.y, R = p.r + 8;
+      if (dx * dx + dy * dy < R * R){ hover = true; break; }
+    }
+    canvas.style.cursor = hover ? 'grab' : 'default';
+  }
+});
+
+function endPointer(e){
+  if (pointer.grab >= 0){ pointer.grab = -1; }
+  else if (pointer.moved < 7 && performance.now() - pointer.downT < 350){
+    trySpawn(pointer.x, pointer.y);
+  }
+  pointer.down = false;
+  canvas.style.cursor = 'default';
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+function trySpawn(x, y){
+  if (parts.length >= 1500){
+    const el = document.getElementById('hint');
+    el.classList.add('warn');
+    setTimeout(() => el.classList.remove('warn'), 1200);
+    return;
+  }
+  const r  = rBar * (0.8 + Math.random() * 0.5);
+  const nx = Math.min(TANK.x1 - r, Math.max(TANK.x0 + r, x));
+  const ny = Math.min(TANK.y1 - r, Math.max(TANK.y0 + 24, y));
+  makeBead(nx, ny, r, rollDensity());
+  updateStats();
+  if (ny > surfaceY(nx)) disturb(nx, 2.2);
+}
+
+window.addEventListener('keydown', e => {
+  if (e.key === 'r' || e.key === 'R') spawnBed();
+  if (e.code === 'Space'){
+    e.preventDefault();
+    for (const p of parts){
+      p.vy -= 250 + Math.random() * 500;
+      p.vx += (Math.random() - 0.5) * 420;
+    }
+    for (let i = 0; i < wave.n; i++) wave.vh[i] += (Math.random() - 0.5) * 3;
+  }
+});
+
+/* ------------------------- rendering ------------------------- */
+let bgGrad = null, glowGrad = null, waterGradA = null, waterGradB = null, floorGrad = null;
+
+function makeBackground(){
+  bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+  bgGrad.addColorStop(0, '#0d1a21');
+  bgGrad.addColorStop(0.55, '#16323d');
+  bgGrad.addColorStop(1, '#0a141a');
+
+  glowGrad = ctx.createRadialGradient(W / 2, H * 0.45, 10, W / 2, H * 0.45, Math.max(W, H) * 0.6);
+  glowGrad.addColorStop(0, 'rgba(120,200,225,0.07)');
+  glowGrad.addColorStop(1, 'rgba(120,200,225,0)');
+
+  waterGradA = ctx.createLinearGradient(0, waterY, 0, TANK.y1);
+  waterGradA.addColorStop(0, 'rgba(126,214,235,0.12)');
+  waterGradA.addColorStop(0.5, 'rgba(66,158,190,0.19)');
+  waterGradA.addColorStop(1, 'rgba(18,84,112,0.33)');
+
+  waterGradB = ctx.createLinearGradient(0, waterY, 0, TANK.y1);
+  waterGradB.addColorStop(0, 'rgba(120,208,235,0.07)');
+  waterGradB.addColorStop(1, 'rgba(20,90,120,0.22)');
+
+  floorGrad = ctx.createLinearGradient(0, TANK.y1, 0, TANK.y1 + 26);
+  floorGrad.addColorStop(0, 'rgba(110,190,215,0.10)');
+  floorGrad.addColorStop(1, 'rgba(110,190,215,0)');
+}
+
+function waterPath(){
+  const { x0, dx, h, n } = wave;
+  ctx.beginPath();
+  ctx.moveTo(TANK.x0, waterY - h[0]);
+  for (let i = 1; i < n; i++) ctx.lineTo(x0 + i * dx, waterY - h[i]);
+  ctx.lineTo(TANK.x1, TANK.y1);
+  ctx.lineTo(TANK.x0, TANK.y1);
+  ctx.closePath();
+}
+
+function tankPath(off){
+  const x0 = TANK.x0 + off, x1 = TANK.x1 - off, y0 = TANK.y0, y1 = TANK.y1 - off, r = 14;
+  ctx.beginPath();
+  ctx.moveTo(x0, y0);
+  ctx.lineTo(x0, y1 - r);
+  ctx.quadraticCurveTo(x0, y1, x0 + r, y1);
+  ctx.lineTo(x1 - r, y1);
+  ctx.quadraticCurveTo(x1, y1, x1, y1 - r);
+  ctx.lineTo(x1, y0);
+}
+
+function drawTank(){
+  // reflection band under the base
+  ctx.fillStyle = floorGrad;
+  ctx.fillRect(TANK.x0, TANK.y1 + 2, TANK.x1 - TANK.x0, 26);
+
+  // glass walls (open top), soft outer stroke + faint inner highlight
+  ctx.lineCap = 'round';
+  tankPath(0);
+  ctx.strokeStyle = 'rgba(178,222,235,0.30)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  tankPath(3);
+  ctx.strokeStyle = 'rgba(255,255,255,0.09)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // rim caps
+  ctx.strokeStyle = 'rgba(210,240,250,0.5)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(TANK.x0 - 7, TANK.y0); ctx.lineTo(TANK.x0 + 9, TANK.y0);
+  ctx.moveTo(TANK.x1 - 9, TANK.y0); ctx.lineTo(TANK.x1 + 7, TANK.y0);
+  ctx.stroke();
+}
+
+function render(){
+  // backdrop
+  ctx.fillStyle = bgGrad;  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = glowGrad; ctx.fillRect(0, 0, W, H);
+
+  // glass back tint
+  tankPath(0);
+  ctx.fillStyle = 'rgba(150,200,215,0.045)';
+  ctx.fill();
+
+  // water body (under the beads)
+  waterPath();
+  ctx.fillStyle = waterGradA;
+  ctx.fill();
+
+  // beads — drawn radius is RENDER_SHRINK * collision radius (visual gaps)
+  for (let i = 0; i < parts.length; i++){
+    const p = parts[i];
+    const R = p.r * RENDER_SHRINK;
+    ctx.globalAlpha = p.alpha;
+    ctx.drawImage(p.sprite, p.x - R, p.y - R, R * 2, R * 2);
+  }
+  ctx.globalAlpha = 1;
+
+  // water tint over submerged parts of the beads
+  waterPath();
+  ctx.fillStyle = waterGradB;
+  ctx.fill();
+
+  // waterline: glow + crisp line
+  const { x0, dx, h, n } = wave;
+  for (let pass = 0; pass < 2; pass++){
+    ctx.beginPath();
+    ctx.moveTo(x0, waterY - h[0]);
+    for (let i = 1; i < n; i++) ctx.lineTo(x0 + i * dx, waterY - h[i]);
+    ctx.strokeStyle = pass === 0 ? 'rgba(190,240,255,0.12)' : 'rgba(220,248,255,0.65)';
+    ctx.lineWidth   = pass === 0 ? 6 : 1.8;
+    ctx.stroke();
+  }
+
+  drawTank();
+
+  // waterline label
+  ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+  ctx.fillStyle = 'rgba(170,220,235,0.42)';
+  ctx.textAlign = 'right';
+  ctx.fillText('WATER LEVEL \u00B7 50%', TANK.x1 - 14, waterY - 10);
+}
+
+/* ------------------------- HUD ------------------------- */
+const statsEl = document.getElementById('stats');
+let fpsEMA = 60;
+function updateStats(){
+  statsEl.textContent = parts.length + ' BEADS \u00B7 ' + Math.round(fpsEMA) + ' FPS';
+}
+
+/* ------------------------- main loop ------------------------- */
+let last = performance.now(), acc = 0, statTick = 0;
+
+function frame(now){
+  requestAnimationFrame(frame);
+  let dt = (now - last) / 1000;
+  last = now;
+  if (dt > 0.05) dt = 0.05;
+
+  // pointer velocity (smoothed) for stirring
+  if (pointer.active){
+    pointer.vx = 0.5 * pointer.vx + 0.5 * (pointer.x - pointer.px) / Math.max(dt, 1e-3);
+    pointer.vy = 0.5 * pointer.vy + 0.5 * (pointer.y - pointer.py) / Math.max(dt, 1e-3);
+  }
+  pointer.px = pointer.x;  pointer.py = pointer.y;
+
+  acc += dt;
+  let steps = 0;
+  while (acc >= SUBSTEP && steps < MAX_STEPS){ substep(SUBSTEP); acc -= SUBSTEP; steps++; }
+  if (steps === MAX_STEPS) acc = 0;   // drop backlog on slow frames
+
+  waveStep();
+  render();
+
+  fpsEMA = fpsEMA * 0.95 + (1 / Math.max(dt, 1e-3)) * 0.05;
+  if (++statTick >= 30){ statTick = 0; updateStats(); }
+}
+
+/* ------------------------- boot ------------------------- */
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    const ow = W, oh = H;
+    resize();
+    // remap existing beads into the new geometry
+    for (const p of parts){
+      p.x = Math.min(TANK.x1 - p.r, Math.max(TANK.x0 + p.r, p.x * (W / ow)));
+      p.y = Math.min(TANK.y1 - p.r, Math.max(TANK.y0 + p.r, p.y * (H / oh)));
+      p.vx *= 0.5; p.vy *= 0.5;
+    }
+  }, 120);
+});
+
+resize();
+for (const hex of LIGHT_COLORS.concat(DEEP_COLORS)) beadSprite(hex);
+spawnBed();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

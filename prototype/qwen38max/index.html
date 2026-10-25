@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hydrogel Basin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&family=Instrument+Sans:wght@400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            abyss: { 900: "#031116", 800: "#061b22", 700: "#0a2831", 600: "#0f3944" },
+            mist: { 100: "#e6f6f5", 300: "#a9ccce", 500: "#6d979c" },
+            gel: { 300: "#7ff0dd", 400: "#43e0c6", 500: "#17bfa8" },
+            ember: { 400: "#f5a75f", 500: "#e8853a" },
+          },
+          fontFamily: {
+            display: ["Bricolage Grotesque", "serif"],
+            body: ["Instrument Sans", "sans-serif"],
+            mono: ["DM Mono", "ui-monospace", "monospace"],
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="relative h-full w-full overflow-hidden bg-abyss-900">
+    <canvas id="scene" class="absolute inset-0 cursor-crosshair"></canvas>
+
+    <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(125%_85%_at_0%_0%,rgba(3,17,22,0.86),rgba(3,17,22,0.35)_38%,transparent_62%)]"></div>
+
+    <header class="pointer-events-none absolute left-0 top-0 max-w-[min(92vw,560px)] p-5 md:p-9">
+      <div class="slide-left flex items-center gap-2.5">
+        <span class="breathe inline-block h-1.5 w-1.5 rounded-full bg-gel-400 shadow-[0_0_10px_2px_rgba(67,224,198,0.6)]"></span>
+        <span class="font-mono text-[9.5px] uppercase tracking-[0.34em] text-gel-300/80">study nº 07 · hydrogel basin</span>
+      </div>
+      <h1 class="slide-left mt-3 font-display text-[clamp(2.9rem,7.6vw,6.2rem)] font-extrabold uppercase leading-[0.8] tracking-[-0.035em]" style="animation-delay:60ms">
+        <span class="block text-mist-100">Buoyancy</span>
+        <span class="block text-transparent" style="-webkit-text-stroke:1.3px rgba(127,240,221,0.5)">Basin</span>
+      </h1>
+      <p class="rise-in mt-4 hidden max-w-[40ch] sm:block text-[13.5px] leading-relaxed text-mist-300/85" style="animation-delay:180ms">
+        Every bead is dealt a random radius and density. The heavy ones go down, the
+        light ones get shoved out of the water by their neighbours — and the waterline
+        sits where you leave it, <span class="text-mist-100">50% of the screen</span>.
+      </p>
+    </header>
+
+    <aside class="rise-in absolute inset-x-2 bottom-2 top-auto max-h-[46vh] w-auto overflow-y-auto border border-gel-300/12 bg-abyss-800/78 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.9)] backdrop-blur-md md:inset-x-auto md:bottom-auto md:right-7 md:top-7 md:max-h-none md:w-[min(88vw,304px)] md:overflow-visible" style="animation-delay:120ms">
+      <div class="flex items-center justify-between border-b border-gel-300/10 px-4 py-2.5">
+        <span class="font-mono text-[9.5px] uppercase tracking-[0.26em] text-mist-500">basin controls</span>
+        <span id="fps" class="font-mono text-[9.5px] tabular-nums text-gel-300/70">0 fps</span>
+      </div>
+
+      <div class="grid grid-cols-3 gap-y-4 px-4 py-4">
+        <div class="border-l border-gel-300/15 pl-2.5">
+          <div id="stat-count" class="font-mono text-[19px] leading-none tabular-nums text-gel-300">0</div>
+          <div class="mt-1 font-mono text-[9px] uppercase tracking-[0.16em] text-mist-500">beads</div>
+        </div>
+        <div class="border-l border-gel-300/15 pl-2.5">
+          <div id="stat-afloat" class="font-mono text-[19px] leading-none tabular-nums text-mist-100">0</div>
+          <div class="mt-1 font-mono text-[9px] uppercase tracking-[0.16em] text-mist-500">above line</div>
+        </div>
+        <div class="border-l border-gel-300/15 pl-2.5">
+          <div id="stat-sunk" class="font-mono text-[19px] leading-none tabular-nums text-mist-300">0</div>
+          <div class="mt-1 font-mono text-[9px] uppercase tracking-[0.16em] text-mist-500">submerged</div>
+        </div>
+      </div>
+
+      <div class="hairline h-px w-full opacity-40"></div>
+
+      <div class="space-y-3.5 px-4 py-4">
+        <label class="group block select-none">
+          <span class="flex items-baseline justify-between gap-3">
+            <span class="font-mono text-[10px] uppercase tracking-[0.2em] text-mist-500 transition-colors group-hover:text-gel-300">water level</span>
+            <span class="font-mono text-[11px] tabular-nums text-mist-100"><span id="v-level">50</span><span class="text-mist-500">%</span></span>
+          </span>
+          <input id="d-level" type="range" class="dial mt-0.5" min="18" max="82" step="1" value="50" />
+          <span class="-mt-1 block font-mono text-[9px] tracking-wide text-mist-500/70">typical 50 %</span>
+        </label>
+
+        <label class="group block select-none">
+          <span class="flex items-baseline justify-between gap-3">
+            <span class="font-mono text-[10px] uppercase tracking-[0.2em] text-mist-500 transition-colors group-hover:text-gel-300">fill of water body</span>
+            <span class="font-mono text-[11px] tabular-nums text-mist-100"><span id="v-fill">70</span><span class="text-mist-500">%</span></span>
+          </span>
+          <input id="d-fill" type="range" class="dial mt-0.5" min="25" max="88" step="1" value="70" />
+          <span id="hint-fill" class="-mt-1 block font-mono text-[9px] tracking-wide text-mist-500/70">now 0 %</span>
+        </label>
+
+        <label class="group block select-none">
+          <span class="flex items-baseline justify-between gap-3">
+            <span class="font-mono text-[10px] uppercase tracking-[0.2em] text-mist-500 transition-colors group-hover:text-gel-300">gravity</span>
+            <span class="font-mono text-[11px] tabular-nums text-mist-100"><span id="v-gravity">1500</span></span>
+          </span>
+          <input id="d-gravity" type="range" class="dial mt-0.5" min="300" max="2800" step="20" value="1500" />
+          <span id="hint-gravity" class="-mt-1 block font-mono text-[9px] tracking-wide text-mist-500/70">9.8 m·s⁻²</span>
+        </label>
+
+        <label class="group block select-none">
+          <span class="flex items-baseline justify-between gap-3">
+            <span class="font-mono text-[10px] uppercase tracking-[0.2em] text-mist-500 transition-colors group-hover:text-gel-300">water viscosity</span>
+            <span class="font-mono text-[11px] tabular-nums text-mist-100"><span id="v-viscosity">1.00</span></span>
+          </span>
+          <input id="d-viscosity" type="range" class="dial mt-0.5" min="0.2" max="2.4" step="0.05" value="1" />
+        </label>
+
+        <label class="group block select-none">
+          <span class="flex items-baseline justify-between gap-3">
+            <span class="font-mono text-[10px] uppercase tracking-[0.2em] text-mist-500 transition-colors group-hover:text-gel-300">bead size</span>
+            <span class="font-mono text-[11px] tabular-nums text-mist-100"><span id="v-size">1.00</span><span class="text-mist-500">×</span></span>
+          </span>
+          <input id="d-size" type="range" class="dial mt-0.5" min="0.55" max="1.6" step="0.05" value="1" />
+          <span class="-mt-1 block font-mono text-[9px] tracking-wide text-mist-500/70">applies to beads dealt next</span>
+        </label>
+      </div>
+
+      <div class="hairline h-px w-full opacity-40"></div>
+
+      <div class="grid grid-cols-3 gap-2 px-4 py-4">
+        <button id="btn-drop" class="relative overflow-hidden rounded-[3px] border px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em] border-gel-400/50 bg-gel-400/12 text-gel-300 hover:border-gel-300 hover:bg-gel-400/22 hover:text-mist-100">drop</button>
+        <button id="btn-pause" class="relative overflow-hidden rounded-[3px] border px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em] border-mist-300/18 bg-white/[0.02] text-mist-300 hover:border-mist-300/40 hover:bg-white/[0.06] hover:text-mist-100">pause</button>
+        <button id="btn-reset" class="relative overflow-hidden rounded-[3px] border px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em] border-mist-300/18 bg-white/[0.02] text-mist-300 hover:border-mist-300/40 hover:bg-white/[0.06] hover:text-mist-100">reset</button>
+      </div>
+
+      <div class="border-t border-gel-300/10 px-4 py-3.5">
+        <div class="flex items-center justify-between font-mono text-[9px] uppercase tracking-[0.2em] text-mist-500">
+          <span>density</span>
+          <span class="tabular-nums text-mist-300">mean ρ <span id="mean-dens">0.00</span></span>
+        </div>
+        <div class="mt-2 h-[7px] w-full rounded-full" style="background:linear-gradient(90deg, hsl(156 55% 85%), hsl(176 58% 66%), hsl(198 55% 48%), hsl(210 52% 42%), hsl(28 66% 55%))"></div>
+        <div class="mt-1.5 flex justify-between font-mono text-[9px] tracking-wide text-mist-500">
+          <span>0.24 · floats</span>
+          <span>1.0 · hovers</span>
+          <span>2.4 · sinks</span>
+        </div>
+      </div>
+    </aside>
+
+    <div id="paused-badge" class="pointer-events-none absolute left-1/2 top-5 -translate-x-1/2 border border-ember-400/40 bg-abyss-900/70 px-3 py-1 font-mono text-[9.5px] uppercase tracking-[0.32em] text-ember-400 backdrop-blur-sm transition-all duration-300 -translate-y-3 opacity-0">paused</div>
+
+    <footer class="pointer-events-none absolute bottom-4 left-5 hidden flex-wrap md:flex items-center gap-x-5 gap-y-2 md:bottom-8 md:left-9">
+      <span class="rise-in flex items-center gap-2 font-mono text-[9.5px] uppercase tracking-[0.18em] text-mist-500/85" style="animation-delay:320ms"><span class="h-[3px] w-[3px] rounded-full bg-ember-400/80"></span>drag · lift a bead clear of the water</span>
+      <span class="rise-in flex items-center gap-2 font-mono text-[9.5px] uppercase tracking-[0.18em] text-mist-500/85" style="animation-delay:410ms"><span class="h-[3px] w-[3px] rounded-full bg-ember-400/80"></span>click · ring the surface</span>
+      <span class="rise-in flex items-center gap-2 font-mono text-[9.5px] uppercase tracking-[0.18em] text-mist-500/85" style="animation-delay:500ms"><span class="h-[3px] w-[3px] rounded-full bg-ember-400/80"></span>space · pause    r · reset    d · drop    ↑↓ · waterline</span>
+    </footer>
+
+    <div class="pointer-events-none absolute bottom-4 right-5 hidden text-right md:block font-mono text-[9.5px] uppercase tracking-[0.2em] text-mist-500/70 md:bottom-8 md:right-9">
+      <span id="level-px" class="tabular-nums text-gel-300/80">0</span>px actual waterline
+    </div>
+  </div>
+
+  <script src="js/geometry.js"></script>
+  <script src="js/sprite.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

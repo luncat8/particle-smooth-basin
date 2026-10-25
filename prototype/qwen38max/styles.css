@@ -1,0 +1,167 @@
+':root {
+  --color-abyss-900: #031116;
+  --color-abyss-800: #061b22;
+  --color-mist-100: #e6f6f5;
+  --color-mist-300: #a9ccce;
+  --color-mist-500: #6d979c;
+  --color-gel-300: #7ff0dd;
+  --color-gel-400: #43e0c6;
+  --color-ember-400: #f5a75f;
+  --font-display: "Bricolage Grotesque", serif;
+  --font-body: "Instrument Sans", sans-serif;
+  --font-mono: "DM Mono", ui-monospace, monospace;
+}
+
+@theme {
+  --font-display: "Bricolage Grotesque", "Bricolage Grotesque Placeholder", serif;
+  --font-body: "Instrument Sans", "Instrument Sans Placeholder", sans-serif;
+  --font-mono: "DM Mono", ui-monospace, monospace;
+
+  --color-abyss-900: #031116;
+  --color-abyss-800: #061b22;
+  --color-abyss-700: #0a2831;
+  --color-abyss-600: #0f3944;
+  --color-mist-100: #e6f6f5;
+  --color-mist-300: #a9ccce;
+  --color-mist-500: #6d979c;
+  --color-gel-300: #7ff0dd;
+  --color-gel-400: #43e0c6;
+  --color-gel-500: #17bfa8;
+  --color-ember-400: #f5a75f;
+  --color-ember-500: #e8853a;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #031116;
+  color: var(--color-mist-100);
+  font-family: var(--font-body);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+canvas {
+  display: block;
+  touch-action: none;
+}
+
+/* ---------- range sliders ---------- */
+input[type="range"].dial {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 22px;
+  background: transparent;
+  cursor: ew-resize;
+}
+input[type="range"].dial::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(67, 224, 198, 0.85) 0%,
+    rgba(67, 224, 198, 0.85) var(--pct, 50%),
+    rgba(169, 204, 206, 0.18) var(--pct, 50%),
+    rgba(169, 204, 206, 0.18) 100%
+  );
+}
+input[type="range"].dial::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5.5px;
+  border-radius: 999px;
+  background: #d9fbf4;
+  border: 1px solid rgba(3, 17, 22, 0.6);
+  box-shadow:
+    0 0 0 3px rgba(67, 224, 198, 0.16),
+    0 2px 8px rgba(0, 0, 0, 0.5);
+  transition:
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+input[type="range"].dial:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
+  box-shadow:
+    0 0 0 5px rgba(67, 224, 198, 0.2),
+    0 2px 10px rgba(0, 0, 0, 0.6);
+}
+input[type="range"].dial::-moz-range-track {
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(169, 204, 206, 0.18);
+}
+input[type="range"].dial::-moz-range-progress {
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(67, 224, 198, 0.85);
+}
+input[type="range"].dial::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  background: #d9fbf4;
+  border: 1px solid rgba(3, 17, 22, 0.6);
+  box-shadow: 0 0 0 3px rgba(67, 224, 198, 0.16);
+}
+
+/* ---------- motion ---------- */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes slide-left {
+  from {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.rise-in {
+  animation: rise-in 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.slide-left {
+  animation: slide-left 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.breathe {
+  animation: breathe 2.6s ease-in-out infinite;
+}
+
+.hairline {
+  background-image: linear-gradient(
+    90deg,
+    transparent,
+    rgba(127, 240, 221, 0.35),
+    transparent
+  );
+}
+
+::selection {
+  background: rgba(67, 224, 198, 0.3);
+}

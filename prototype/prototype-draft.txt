@@ -1,0 +1,13 @@
+html js
+
+imagine basin filled with balls or flower-pot with that hydrogel translucent pebbles.
+
+water surface at 50% height of screen. 
+
+make Archimedes force and random particle weight and size
+i expect some balls be out of water because pushed, some heavy - sunk.
+
+smooth collision forces. visual choose circles size a bit smaller then typical push force to keep some small visual gaps.
+
+typical water level 50%.
+number of particles choose to fill something like 70% of water 

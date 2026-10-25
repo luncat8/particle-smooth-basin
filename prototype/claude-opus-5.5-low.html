@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hydrogel Basin</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #0d1016;
+      font-family: system-ui, sans-serif;
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      touch-action: none;
+    }
+    .hud {
+      position: fixed;
+      top: 14px;
+      left: 16px;
+      color: rgba(255, 255, 255, 0.5);
+      font: 13px sans-serif;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div class="hud">Hold mouse to stir · R to reshuffle</div>
+
+  <script>
+    const c = document.getElementById("scene");
+    const ctx = c.getContext("2d");
+    let W = 0, H = 0, ps = [], raf = 0;
+    const mouse = { x: -1e4, y: -1e4, down: false };
+
+    function init() {
+      W = c.width = innerWidth;
+      H = c.height = innerHeight;
+      const waterArea = W * H * 0.5;
+      const target = waterArea * 0.7;
+      ps = [];
+      let a = 0;
+      const base = Math.max(10, Math.min(W, H) / 40);
+      while (a < target) {
+        const r = base * (0.6 + Math.random() * 0.9);
+        const rho = 0.55 + Math.random() * 0.9;
+        ps.push({ x: r + Math.random() * (W - 2 * r), y: Math.random() * H, vx: 0, vy: 0, r, rho, hue: 160 + Math.random() * 200 });
+        a += Math.PI * r * r;
+      }
+    }
+    init();
+
+    const g = 900;
+    function step(dt) {
+      const lvl = H * 0.5;
+      const cell = 64, cols = Math.ceil(W / cell) + 1;
+      const grid = new Map();
+      ps.forEach((p, i) => {
+        const k = Math.floor(p.y / cell) * cols + Math.floor(p.x / cell);
+        if (!grid.has(k)) grid.set(k, []);
+        grid.get(k).push(i);
+      });
+      for (let i = 0; i < ps.length; i++) {
+        const p = ps[i];
+        const cx = Math.floor(p.x / cell), cy = Math.floor(p.y / cell);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const l = grid.get((cy + dy) * cols + (cx + dx));
+          if (!l) continue;
+          for (const j of l) {
+            if (j <= i) continue;
+            const q = ps[j];
+            const ex = q.x - p.x, ey = q.y - p.y;
+            const R = (p.r + q.r) * 1.08;
+            const d2 = ex * ex + ey * ey;
+            if (d2 >= R * R || d2 < 1e-6) continue;
+            const d = Math.sqrt(d2), ov = (R - d) / R;
+            const nx = ex / d, ny = ey / d;
+            const mp = p.r * p.r * p.rho, mq = q.r * q.r * q.rho;
+            const rvn = (q.vx - p.vx) * nx + (q.vy - p.vy) * ny;
+            const f = (ov * ov * 9e5 + ov * 2e4) - rvn * 6;
+            const fx = f * nx * Math.min(mp, mq) * 0.01, fy = f * ny * Math.min(mp, mq) * 0.01;
+            p.vx -= fx / mp * dt; p.vy -= fy / mp * dt;
+            q.vx += fx / mq * dt; q.vy += fy / mq * dt;
+          }
+        }
+      }
+      for (const p of ps) {
+        let sub = (p.y + p.r - lvl) / (2 * p.r);
+        sub = Math.max(0, Math.min(1, sub));
+        const frac = sub * sub * (3 - 2 * sub);
+        p.vy += g * dt * (1 - frac / p.rho);
+        const drag = frac > 0 ? 2.2 : 0.2;
+        p.vx *= Math.exp(-drag * dt); p.vy *= Math.exp(-drag * dt);
+        if (mouse.down) {
+          const ex = p.x - mouse.x, ey = p.y - mouse.y, d = Math.hypot(ex, ey);
+          if (d < 140 && d > 1) { p.vx += ex / d * 3000 * dt; p.vy += ey / d * 3000 * dt; }
+        }
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        if (p.x < p.r) { p.x = p.r; p.vx *= -0.3; }
+        if (p.x > W - p.r) { p.x = W - p.r; p.vx *= -0.3; }
+        if (p.y > H - p.r) { p.y = H - p.r; p.vy *= -0.3; p.vx *= 0.98; }
+      }
+    }
+
+    let last = performance.now(), t = 0;
+    function loop(now) {
+      const fdt = Math.min(0.033, (now - last) / 1000); last = now; t += fdt;
+      const n = 8; for (let k = 0; k < n; k++) step(fdt / n);
+      const lvl = H * 0.5;
+      const bg = ctx.createLinearGradient(0, 0, 0, H);
+      bg.addColorStop(0, "#1b1f2a"); bg.addColorStop(1, "#0d1016");
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+      for (const p of ps) {
+        const sat = 70, lig = 45 + (1.45 - p.rho) * 25;
+        const gr = ctx.createRadialGradient(p.x - p.r * 0.35, p.y - p.r * 0.4, p.r * 0.1, p.x, p.y, p.r);
+        gr.addColorStop(0, `hsla(${p.hue},${sat}%,${Math.min(92, lig + 35)}%,0.95)`);
+        gr.addColorStop(0.6, `hsla(${p.hue},${sat}%,${lig}%,0.75)`);
+        gr.addColorStop(1, `hsla(${p.hue},${sat}%,${lig - 15}%,0.55)`);
+        ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,0.55)";
+        ctx.beginPath(); ctx.ellipse(p.x - p.r * 0.35, p.y - p.r * 0.45, p.r * 0.22, p.r * 0.13, -0.6, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.beginPath(); ctx.moveTo(0, H);
+      for (let x = 0; x <= W; x += 10) ctx.lineTo(x, lvl + Math.sin(x * 0.02 + t * 2) * 2 + Math.sin(x * 0.007 - t) * 2);
+      ctx.lineTo(W, H); ctx.closePath();
+      const wg = ctx.createLinearGradient(0, lvl, 0, H);
+      wg.addColorStop(0, "rgba(80,170,255,0.28)"); wg.addColorStop(1, "rgba(20,60,140,0.45)");
+      ctx.fillStyle = wg; ctx.fill();
+      ctx.strokeStyle = "rgba(190,230,255,0.7)"; ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let x = 0; x <= W; x += 10) { const y = lvl + Math.sin(x * 0.02 + t * 2) * 2 + Math.sin(x * 0.007 - t) * 2; x ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+      ctx.stroke();
+      ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.font = "13px sans-serif";
+      ctx.fillText("Hold mouse to stir · R to reshuffle", 14, 22);
+      raf = requestAnimationFrame(loop);
+    }
+    raf = requestAnimationFrame(loop);
+
+    const mv = (e) => { mouse.x = e.clientX; mouse.y = e.clientY; };
+    const dn = (e) => { mv(e); mouse.down = true; };
+    const up = () => { mouse.down = false; };
+    const key = (e) => { if (e.key === "r") init(); };
+    addEventListener("pointermove", mv);
+    addEventListener("pointerdown", dn);
+    addEventListener("pointerup", up);
+    addEventListener("resize", init);
+    addEventListener("keydown", key);
+  </script>
+</body>
+</html>
