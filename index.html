@@ -1,13 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title></title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+<title>Hydrogel Basin</title>
+<style>
+	html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#0b1418}
+	canvas{display:block;width:100vw;height:100vh;touch-action:none;cursor:default}
+	.hud,.hint,.stats{position:fixed;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+		user-select:none;-webkit-user-select:none;pointer-events:none;z-index:2}
+	.hud{left:20px;top:18px}
+	.hud h1{margin:0;font-size:12px;font-weight:700;letter-spacing:.28em;color:#9fd8e8}
+	.hud p{margin:6px 0 0;font-size:10px;letter-spacing:.12em;color:rgba(170,215,230,.55)}
+	.hint{left:20px;bottom:16px;font-size:10px;letter-spacing:.10em;color:rgba(170,215,230,.5)}
+	.hint b{color:rgba(210,240,250,.78);font-weight:600}
+	.stats{right:20px;bottom:16px;font-size:10px;letter-spacing:.12em;color:rgba(170,215,230,.4);text-align:right}
+</style>
 </head>
 <body>
-<div id="app">
-  <canvas id="c"></canvas>
+<canvas id="c"></canvas>
+<div class="hud">
+	<h1>HYDROGEL&nbsp;&middot;&nbsp;BUOYANCY BASIN</h1>
+	<p>ARCHIMEDES PLAYGROUND &mdash; RANDOM MASS &amp; SIZE, SOFT COLLISIONS</p>
 </div>
+<div class="hint" id="hint">drag a bead to toss it &middot; click water to add one &middot; <b>SPACE</b> splash &middot; <b>R</b> resettle</div>
+<div class="stats" id="stats"></div>
+<script src="js/engine.js"></script>
+<script src="js/render.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>
