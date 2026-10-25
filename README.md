@@ -20,3 +20,5 @@ The upper part of the basin is a cold gradient source; the lower part adds heat.
 ## Development checks
 
 Run `node experiments/bench.js` for a seeded physics throughput and link-capacity baseline. Run `node experiments/thermal.js` for thermal, pointer, wave-step, and bond-lifetime checks, and `node experiments/smoke.js` for classic-script UI checks. The engine is DOM-free and can be required directly by Node.
+
+To measure a complete browser frame, open `index.html?profile=1`: after 300 frames the stats line (and console) shows median and p95 frame, simulation, and render times. Profiling is off unless requested and adds no per-frame allocation.

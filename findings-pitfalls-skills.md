@@ -29,6 +29,15 @@
 - static tank outlines and rim ticks belong in cached `Path2D` objects made
   on resize; only the wave surface path changes each frame.
 
+## profiling
+
+- a one-shot profile summary written to a periodically refreshed
+  stats element is erased within a second. gate the refresh once the
+  profile is done, or the measurement scrolls away before it is read.
+- `Float64Array.prototype.sort()` sorts numerically (unlike `Array`
+  string sort), so p50/p95 over preallocated samples needs no
+  comparator closure or scratch array beyond one `slice()` at report.
+
 ## tooling
 
 - classic `<script>` files share one global lexical scope in the

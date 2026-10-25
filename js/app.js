@@ -19,6 +19,39 @@ const SCENARIO_PRESETS = {
 	growStable: [1, -4],
 };
 
+/* Optional stage timer: open with ?profile=1. Samples are preallocated
+   and nothing is timed or formatted while profiling is off. */
+const PROFILE_FRAMES = 300;
+const profileSearch = typeof location !== "undefined" ? location.search : (window.location ? window.location.search : "");
+const profileEnabled = !!profileSearch && profileSearch.indexOf("profile=1") !== -1;
+const profileFrame = new Float64Array(PROFILE_FRAMES);
+const profileSim = new Float64Array(PROFILE_FRAMES);
+const profileRender = new Float64Array(PROFILE_FRAMES);
+let profileCount = 0;
+let profileDone = false;
+
+function profilePercentile(samples, fraction) {
+	const sorted = samples.slice().sort();
+	return sorted[Math.min(PROFILE_FRAMES - 1, Math.floor(fraction * PROFILE_FRAMES))];
+}
+
+function reportProfile() {
+	profileDone = true;
+	const text = "PROFILE " + PROFILE_FRAMES + "F · FRAME p50 " + profilePercentile(profileFrame, 0.5).toFixed(2) + " p95 " + profilePercentile(profileFrame, 0.95).toFixed(2)
+		+ " · SIM p50 " + profilePercentile(profileSim, 0.5).toFixed(2) + " p95 " + profilePercentile(profileSim, 0.95).toFixed(2)
+		+ " · RENDER p50 " + profilePercentile(profileRender, 0.5).toFixed(2) + " p95 " + profilePercentile(profileRender, 0.95).toFixed(2) + " MS";
+	statsEl.textContent = text;
+	console.log(text);
+}
+
+function recordProfile(frameMs, simMs, renderMs) {
+	if (profileCount >= PROFILE_FRAMES) return;
+	profileFrame[profileCount] = frameMs;
+	profileSim[profileCount] = simMs;
+	profileRender[profileCount] = renderMs;
+	if (++profileCount === PROFILE_FRAMES) reportProfile();
+}
+
 function signedValue(value) {
 	return (value > 0 ? "+" : "") + value.toFixed(2);
 }
@@ -64,6 +97,7 @@ function updateCountLabel() {
 }
 
 function updateStats() {
+	if (profileDone) return;	// keep the finished profile on screen
 	let totalTemp = 0;
 	for (let i = 0; i < world.n; i++) totalTemp += world.temp[i];
 	const avgTemp = world.n ? totalTemp / world.n : 0;
@@ -192,8 +226,17 @@ function frame(now) {
 	const dt = Math.min(0.05, (now - last) / 1000);
 	last = now;
 
-	stepWorld(world, dt);
-	render(ctx, world, assets);
+	if (!profileEnabled) {
+		stepWorld(world, dt);
+		render(ctx, world, assets);
+	} else {
+		const t0 = performance.now();
+		stepWorld(world, dt);
+		const t1 = performance.now();
+		render(ctx, world, assets);
+		const t2 = performance.now();
+		recordProfile(t2 - t0, t1 - t0, t2 - t1);
+	}
 
 	fpsEMA = fpsEMA * 0.95 + (1 / Math.max(dt, 1e-3)) * 0.05;
 	if (++statTick >= 30) {

@@ -1,0 +1,7 @@
+0.3.0 profile stage timer · node v22.22.3 · seeded
+default n=810 · 0.57 ms/frame · 60 s NaN=0 · max|v|=9 · pair peak=2209/12000 · effective-link peak=74 · cold-link peak=1836/12000
+splash and arch-size stress (a=10, size=-1, buoyancy=1.5): NaN=0
+near-cap n=1500 · 1.39 ms/frame · pair peak=3754
+Archimedes: dens 0.5 -> 0.500 · dens 2.0 -> 1.000
+smoke ?profile=1 (fake clock 1.25 ms/stage): PROFILE 300F · FRAME p50 2.50 p95 2.50 · SIM p50 1.25 p95 1.25 · RENDER p50 1.25 p95 1.25 MS — reports at frame 300, stays on screen
+browser p95: not captured (no browser in sandbox) — run index.html?profile=1 on target device, DPR 1/2, 300/810/1500 beads
