@@ -94,6 +94,12 @@ $("sizeResponse").addEventListener("input", e => {
 	$("sizeValue").textContent = (value > 0 ? "+" : "") + value.toFixed(2);
 });
 
+$("archSize").addEventListener("input", e => {
+	const value = Number(e.target.value);
+	setArchSize(world, value);
+	$("archValue").textContent = (value > 0 ? "+" : "") + value.toFixed(2);
+});
+
 $("fillFraction").addEventListener("input", e => {
 	$("fillValue").textContent = e.target.value + "%";
 	updateCountLabel();

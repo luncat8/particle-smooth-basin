@@ -39,6 +39,7 @@
 	<h2>Thermal controls</h2>
 	<label class="control"><span>Heat exchange <output id="heatValue">1.00×</output></span><input id="heatRate" type="range" min="0" max="4" step="0.05" value="1"><small>ambient zones and bead-to-bead transfer</small></label>
 	<label class="control"><span>Thermal size <output id="sizeValue">0.00</output></span><input id="sizeResponse" type="range" min="-1" max="1" step="0.05" value="0"><small>negative: hot shrinks · positive: hot grows</small></label>
+	<label class="control"><span>Archimedes force vs size <output id="archValue">0.00</output></span><input id="archSize" type="range" min="-1" max="1" step="0.05" value="0"><small>0: buoyancy ignores size · positive: big beads more buoyant</small></label>
 	<label class="control"><span>Canvas coverage <output id="fillValue">50%</output></span><input id="fillFraction" type="range" min="30" max="70" step="1" value="50"><small id="countValue">0 beads at typical size</small></label>
 	<label class="control"><span>Typical radius <output id="radiusValue">14 px</output></span><input id="typicalRadius" type="range" min="8" max="22" step="1" value="14"><small>collision radius at temperature 0.5</small></label>
 	<label class="control"><span>Average mass <output id="massValue">1.00×</output></span><input id="massScale" type="range" min="0.4" max="2.5" step="0.05" value="1"><small>inertia scale; buoyancy density stays independent</small></label>

@@ -40,7 +40,7 @@ for (let f = 0; f < FRAMES; f++) {
 const msPerFrame = Number(process.hrtime.bigint() - t0) / 1e6 / FRAMES;
 
 const s = settleStats(world);
-console.log("0.2.0 thermal bench  node=" + process.version + "  " + W + "x" + H);
+console.log("0.2.1 thermal bench  node=" + process.version + "  " + W + "x" + H);
 console.log("n=" + world.n + "  rBar=" + world.rBar.toFixed(1));
 console.log("throughput: " + msPerFrame.toFixed(2) + " ms/frame (" + (1000 / msPerFrame).toFixed(0) + " fps headroom) at " + FRAMES + " frames / 60 s sim");
 console.log("after settle: NaN=" + scanNaN(world) + "  max|v|=" + s.maxV.toFixed(0) + "  mean|v|=" + s.meanV.toFixed(1));
@@ -60,6 +60,27 @@ console.log("submergedFrac: f(0)=" + f0 + " f(full)=" + fFull + " f(none)=" + fN
 eng.splash(world);
 for (let f = 0; f < 300; f++) eng.stepWorld(world, 1 / 60);
 console.log("after splash: NaN=" + scanNaN(world) + "  max|v|=" + settleStats(world).maxV.toFixed(0));
+
+// --- extreme slider combo: big cold beads buoyant, hot beads shrink and flow ---
+eng.setArchSize(world, 1);
+eng.setSizeResponse(world, -0.5);
+for (let f = 0; f < 300; f++) eng.stepWorld(world, 1 / 60);
+console.log("arch-size stress (a=1, size=-0.5): NaN=" + scanNaN(world) + "  max|v|=" + settleStats(world).maxV.toFixed(0));
+
+// --- profile scene for the 0.3 go/no-go: near-cap bed ---
+const heavy = eng.createWorld(W, H);
+eng.setFillFraction(heavy, 0.7);
+eng.setTypicalRadius(heavy, 8);
+eng.spawnBed(heavy);
+const PROF_FRAMES = 600;
+const t2 = process.hrtime.bigint();
+let heavyPairs = 0;
+for (let f = 0; f < PROF_FRAMES; f++) {
+	eng.stepWorld(heavy, 1 / 60);
+	if (heavy.pairN > heavyPairs) heavyPairs = heavy.pairN;
+}
+const profMs = Number(process.hrtime.bigint() - t2) / 1e6 / PROF_FRAMES;
+console.log("profile near-cap: n=" + heavy.n + "  " + profMs.toFixed(2) + " ms/frame  peak pairs=" + heavyPairs + " / " + heavy.pairA.length);
 
 // --- archimedes equilibrium: a free bead settles at submerged frac = rho ---
 // one bead per world, dropped into still water, 20 s to settle

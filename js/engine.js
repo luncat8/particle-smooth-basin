@@ -9,6 +9,7 @@ const TAU = Math.PI * 2;
 const WATER_FRAC = 0.5;		// waterline share of screen height
 const DEFAULT_FILL = 0.50;
 const DEFAULT_RADIUS = 14;
+const SIZE_FACTOR_MAX = 1.28;	// upper bound on bead r/rBar; pair-grid cell size assumes it
 const SPAWN_CAP = 1500;
 const RHO_WATER = 1;
 const DRAG_AIR = 0.05;		// 1/s
@@ -35,7 +36,7 @@ function createWorld(W, H) {
 		grav: 1850,			// px/s^2, rescaled with screen height
 		rBar: DEFAULT_RADIUS, rMax: 24,
 		fillFraction: DEFAULT_FILL, typicalRadius: DEFAULT_RADIUS, massScale: 1,
-		heatRate: 1, sizeResponse: 0, temperatureView: false,
+		heatRate: 1, sizeResponse: 0, archSize: 0, temperatureView: false,
 		n: 0, cap,
 		x: new Float64Array(cap), y: new Float64Array(cap),
 		px: new Float64Array(cap), py: new Float64Array(cap),
@@ -173,7 +174,7 @@ function spawnBed(world) {
 	world.linkN = 0;
 	if (world.linkHashKeys) world.linkHashKeys.fill(-1);
 	world.rBar = world.typicalRadius;
-	world.rMax = world.rBar * 1.28 * Math.pow(2, Math.abs(world.sizeResponse) * 0.5);
+	syncRMax(world);
 	world.acc = 0;
 	const innerW = t.x1 - t.x0;
 	const canvasArea = world.W * world.H;
@@ -189,11 +190,15 @@ function spawnBed(world) {
 			const x = t.x0 + (col + 0.5 + (row % 2 ? 0.5 : 0)) * sx;
 			if (x > t.x1 - 2) continue;
 			const big = ((col + row) % 2) === 0;
-			const r = world.rBar * (big ? 1.05 + Math.random() * 0.23 : 0.72 + Math.random() * 0.23);
+			const r = world.rBar * (big ? 1.05 + Math.random() * (SIZE_FACTOR_MAX - 1.05) : 0.72 + Math.random() * 0.23);
 			pushBead(world, x + (Math.random() - 0.5) * 3, y + (Math.random() - 0.5) * 3, r, rollDensity());
 		}
 	}
 	world.pointer.grab = -1;
+}
+
+function syncRMax(world) {
+	world.rMax = world.rBar * SIZE_FACTOR_MAX * Math.pow(2, Math.abs(world.sizeResponse) * 0.5);
 }
 
 function setHeatRate(world, value) {
@@ -202,13 +207,17 @@ function setHeatRate(world, value) {
 
 function setSizeResponse(world, value) {
 	world.sizeResponse = clamp(value, -1, 1);
-	world.rMax = world.typicalRadius * 1.28 * Math.pow(2, Math.abs(world.sizeResponse) * 0.5);
+	syncRMax(world);
+}
+
+function setArchSize(world, value) {
+	world.archSize = clamp(value, -1, 1);
 }
 
 function setTypicalRadius(world, value) {
 	world.typicalRadius = clamp(value, 8, 22);
 	world.rBar = world.typicalRadius;
-	world.rMax = world.rBar * 1.28 * Math.pow(2, Math.abs(world.sizeResponse) * 0.5);
+	syncRMax(world);
 }
 
 function setFillFraction(world, value) {
@@ -223,7 +232,7 @@ function setMassScale(world, value) {
 function addBead(world, x, y) {
 	if (world.n >= world.cap) return false;
 	const t = world.tank;
-	const r = world.rBar * (0.8 + Math.random() * 0.5);
+	const r = world.rBar * (0.8 + Math.random() * (SIZE_FACTOR_MAX - 0.8));
 	const nx = clamp(x, t.x0 + r, t.x1 - r);
 	const ny = clamp(y, t.y0 + 24, t.y1 - r);
 	pushBead(world, nx, ny, r, rollDensity());
@@ -388,8 +397,9 @@ function exchangeHeat(world, h) {
 }
 
 function updateThermalSize(world, i) {
-	const factor = Math.pow(2, world.sizeResponse * (world.temp[i] - 0.5));
-	const r = world.rBar * factor * (world.baseSize[i] || 1);
+	const s = world.sizeResponse;
+	const factor = s ? Math.pow(2, s * (world.temp[i] - 0.5)) : 1;
+	const r = world.rBar * factor * world.baseSize[i];
 	world.r[i] = r;
 	world.invM[i] = 1 / (world.massScale * world.dens[i] * r * r);
 }
@@ -509,13 +519,16 @@ function substep(world, h) {
 	const surf = world.waterY;
 	const ptrOn = world.pointer.active;
 
-	// 1) gravity vs Archimedes + drag, then integrate
+	// 1) gravity vs Archimedes + drag, then integrate. archSize couples
+	// buoyancy to radius: lift = (r/rBar)^archSize, zero keeps it size-free
+	const arch = world.archSize, rBarInv = 1 / world.rBar;
 	for (let i = 0; i < n; i++) {
 		updateThermalSize(world, i);
 		px[i] = x[i]; py[i] = y[i];
 		const f = submergedFrac(y[i] - surf, r[i]);
 		frac[i] = f;
-		vy[i] += grav * (1 - RHO_WATER * f / dens[i]) * h;
+		const lift = arch ? Math.pow(r[i] * rBarInv, arch) : 1;
+		vy[i] += grav * (1 - RHO_WATER * f * lift / dens[i]) * h;
 		const df = 1 / (1 + (DRAG_AIR + DRAG_WATER * f * f) * h);
 		vx[i] *= df; vy[i] *= df;
 		if (ptrOn) pointerForce(world, i, h);
@@ -615,7 +628,7 @@ if (typeof module !== "undefined" && module.exports) {
 	module.exports = {
 		createWorld, resizeWorld, stepWorld, substep,
 		spawnBed, addBead, splash, rollDensity, submergedFrac,
-		setHeatRate, setSizeResponse, setTypicalRadius, setFillFraction, setMassScale,
+		setHeatRate, setSizeResponse, setArchSize, setTypicalRadius, setFillFraction, setMassScale,
 		disturb, pickBead, pointerMove, pointerDown, pointerUp,
 		SPAWN_CAP, WATER_FRAC, SUBSTEP,
 	};

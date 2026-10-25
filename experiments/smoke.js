@@ -4,11 +4,12 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const assert = require("node:assert/strict");
 
-const ids = ["c", "stats", "hint", "heatRate", "heatValue", "sizeResponse", "sizeValue", "fillFraction", "fillValue", "countValue", "typicalRadius", "radiusValue", "massScale", "massValue", "viewToggle", "redeal"];
+const ids = ["c", "stats", "hint", "heatRate", "heatValue", "sizeResponse", "sizeValue", "archSize", "archValue", "fillFraction", "fillValue", "countValue", "typicalRadius", "radiusValue", "massScale", "massValue", "viewToggle", "redeal"];
 const elements = Object.create(null);
 for (const id of ids) elements[id] = { id, value: "", textContent: "", style: {}, listeners: Object.create(null), addEventListener(type, fn) { this.listeners[type] = fn; }, setAttribute() {} };
 Object.assign(elements.heatRate, { value: "1" });
 Object.assign(elements.sizeResponse, { value: "0" });
+Object.assign(elements.archSize, { value: "0" });
 Object.assign(elements.fillFraction, { value: "50" });
 Object.assign(elements.typicalRadius, { value: "14" });
 Object.assign(elements.massScale, { value: "1" });
@@ -38,9 +39,11 @@ for (let i = 1; i <= 31; i++) {
 	frame(i * 16.67);
 }
 elements.heatRate.listeners.input({ target: { value: "2.5" } });
+elements.archSize.listeners.input({ target: { value: "0.5" } });
 elements.viewToggle.listeners.click({ currentTarget: elements.viewToggle });
 elements.fillFraction.listeners.change();
 assert.match(elements.stats.textContent, /BEADS/);
 assert.match(elements.countValue.textContent, /beads at typical size/);
 assert.match(elements.viewToggle.textContent, /on/);
+assert.equal(elements.archValue.textContent, "+0.50");
 console.log("browser bundle smoke: boot, render, controls and re-deal passed");

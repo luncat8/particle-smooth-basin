@@ -50,6 +50,25 @@ eng.setSizeResponse(world, -1);
 eng.substep(world, eng.SUBSTEP);
 assert.ok(Math.abs(world.r[0] / world.r[1] - 2) < 1e-6, "negative thermal response reverses the endpoint size ratio");
 
+// archimedes force vs size: buoyancy couples to radius only when asked
+const arch = eng.createWorld(640, 480);
+assert.equal(arch.archSize, 0, "archimedes-size coupling defaults to zero");
+eng.setHeatRate(arch, 0);
+eng.setSizeResponse(arch, 0);
+placePair(arch, 300, 100);	// far apart: no bonds, both fully submerged, dens 1
+arch.r[0] = arch.rBar; arch.baseSize[0] = 1; arch.invM[0] = 1 / (arch.rBar * arch.rBar);
+arch.r[1] = arch.rBar * 2; arch.baseSize[1] = 2; arch.invM[1] = 1 / (4 * arch.rBar * arch.rBar);
+eng.setArchSize(arch, 0);
+eng.substep(arch, eng.SUBSTEP);
+assert.ok(Math.abs(arch.vy[0]) < 1e-9 && Math.abs(arch.vy[1]) < 1e-9, "zero archimedes response: neutral beads hover at any size");
+eng.setArchSize(arch, 1);
+eng.substep(arch, eng.SUBSTEP);
+assert.ok(Math.abs(arch.vy[0]) < 1e-9 && arch.vy[1] < -4, "positive archimedes response lifts the large bead only");
+arch.vx[0] = arch.vy[0] = arch.vx[1] = arch.vy[1] = 0;
+eng.setArchSize(arch, -1);
+eng.substep(arch, eng.SUBSTEP);
+assert.ok(arch.vy[1] > 2, "negative archimedes response sinks the large bead");
+
 const bonded = eng.createWorld(640, 480);
 eng.setHeatRate(bonded, 0);
 placePair(bonded, 220, 20.8);
@@ -72,4 +91,4 @@ const represented = coverage.n * Math.PI * 1.027 * coverage.rBar * coverage.rBar
 assert.ok(Math.abs(represented - 0.3) < 0.004, "bed count matches requested coverage within count quantization");
 assert.ok(coverage.n <= eng.SPAWN_CAP, "spawn respects the particle cap");
 
-console.log("thermal checks: heat exchange, zones, size response, bonds and coverage passed");
+console.log("thermal checks: heat exchange, zones, size response, archimedes-size coupling, bonds and coverage passed");
