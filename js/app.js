@@ -134,7 +134,7 @@ function pasteSettings() {
 		return null;
 	}
 	if (!parsed || typeof parsed !== "object") {
-		setEcho("settings must be a JSON object like {\"fill\":0.22,…}", "bad");
+		setEcho("settings must be a JSON object like {\"fill\":0.21,\"water\":0.3}", "bad");
 		return null;
 	}
 	return applyAndDeal(parsed);
