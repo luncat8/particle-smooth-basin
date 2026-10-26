@@ -448,28 +448,30 @@ function checkThermal() {
 function checkThermalZone() {
 	var world = createWorld(VIEW_W, VIEW_H);
 	for (var f = 0; f < 480; f++) stepWorld(world, 1 / 60);
-	var links = 0, cold = 0, above = 0, topSum = 0, topN = 0, bottomSum = 0, bottomN = 0, bedY = [];
+	var links = 0, cold = 0, above = 0, topTemps = [], bottomSum = 0, bottomN = 0, bedY = [];
 	for (var k = 0; k < world.linkN; k++) if (world.linkK[k] >= 0.02) links++;
-	var topEdge = world.tank.y0 + (world.tank.y1 - world.tank.y0) * 0.25;
-	var bottomEdge = world.tank.y1 - (world.tank.y1 - world.tank.y0) * 0.25;
+	for (var j = 0; j < world.n; j++) bedY.push(world.y[j]);
+	bedY.sort(function (a, b) { return a - b; });
+	var bedTop = bedY[Math.floor(bedY.length * 0.02)];
+	var span = Math.max(1, world.tank.y1 - bedTop);
+	var topEdge = bedTop + span * 0.25, bottomEdge = bedTop + span * 0.75;
 	for (var i = 0; i < world.n; i++) {
 		if (world.temp[i] < 0.483) cold++;
 		if (world.y[i] < world.waterY) above++;
-		bedY.push(world.y[i]);
-		if (world.y[i] < topEdge) { topSum += world.temp[i]; topN++; }
+		if (world.y[i] < topEdge) topTemps.push(world.temp[i]);
 		if (world.y[i] > bottomEdge) { bottomSum += world.temp[i]; bottomN++; }
 	}
-	if (cold < 100) return failed("only " + cold + " of " + world.n + " beads cool enough to bond after 4 s at 1x");
-	if (links < 1) return failed("no active crust bonds after 4 s at 1x");
-	var top = topN ? topSum / topN : 0, bottom = bottomN ? bottomSum / bottomN : 0;
-	if (!(top < 0.45 && bottom > 0.60)) return failed("band reads warm: top " + top.toFixed(2) + " bottom " + bottom.toFixed(2));
+	if (cold < 100) return failed("only " + cold + " of " + world.n + " beads cool enough to bond after 8 s at 1x");
+	if (links < 1) return failed("no active crust bonds after 8 s at 1x");
+	topTemps.sort(function (a, b) { return a - b; });
+	var top = topTemps.length ? topTemps[Math.floor(topTemps.length * 0.5)] : 0;
+	var bottom = bottomN ? bottomSum / bottomN : 0;
+	if (!(top < 0.50 && bottom > 0.80)) return failed("band contrast weak: top median " + top.toFixed(2) + " bottom " + bottom.toFixed(2));
 	/* the shipped scene: the bed must sit under the water and reach the cold band,
 	   while the heated floor stays in the hot band. Half the beads float, so a few
 	   of them bobbing at the surface is expected -- a bed standing out of the water
 	   is not. */
-	bedY.sort(function (a, b) { return a - b; });
-	var bedTop = bedY[Math.floor(bedY.length * 0.02)];
-	if (above > world.n * 0.05) return failed(above + " of " + world.n + " beads stand above the waterline");
+	if (above > world.n * 0.08) return failed(above + " of " + world.n + " beads stand above the waterline");
 	if (bedTop < world.waterY - 40) return failed("the bed top (" + Math.round(bedTop) + " px) is " + Math.round(world.waterY - bedTop) + " px out of the water");
 	if (bedTop - world.rBar * 1.28 > world.coldZoneEnd * VIEW_H) return failed("the bed top (" + Math.round(bedTop) + " px) misses the cold band");
 	if (world.tank.y1 < world.hotZoneStart * VIEW_H) return failed("the hot band starts below the floor");

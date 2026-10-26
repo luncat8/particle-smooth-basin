@@ -55,16 +55,16 @@
 
 	<section class="group" aria-label="Heat rates">
 		<h3>Heat rates</h3>
-		<label class="control"><span>Cold speed <output id="coldPowerValue">0.70×</output></span><input id="coldPower" type="range" value="0.7"><small>how fast a bead follows the cold half of the map</small></label>
-		<label class="control"><span>Hot speed <output id="hotPowerValue">2.00×</output></span><input id="hotPower" type="range" value="2"><small>how fast a bead follows the hot half of the map</small></label>
+		<label class="control"><span>Cold speed <output id="coldPowerValue">0.70×</output></span><input id="coldPower" type="range" value="0.7"><small>cooling rate in the cold half of the map</small></label>
+		<label class="control"><span>Hot speed <output id="hotPowerValue">2.00×</output></span><input id="hotPower" type="range" value="2"><small>heating rate toward 1 in the hot half of the map</small></label>
 		<label class="control"><span>Conduction <output id="conductionValue">0.25×</output></span><input id="conductionRate" type="range" value="0.25"><small>heat transfer between touching beads</small></label>
 	</section>
 
 	<section class="group" aria-label="Convection forces">
 		<h3>Convection forces</h3>
-		<label class="control"><span>Heat lifts <output id="liftValue">0.30</output></span><input id="thermalLift" type="range" value="0.3"><small>how much lighter a hot bead is; drives overturning</small></label>
-		<label class="control"><span>Archimedes vs size <output id="archValue">-10.00</output></span><input id="archSize" type="range" value="-10"><small>lift scales by size^value, bounded to 1/8–8×</small></label>
-		<label class="control"><span>Buoyancy strength <output id="buoyancyValue">0.20×</output></span><input id="buoyancy" type="range" value="0.2"><small>0: gravity only · 1×: the density balance</small></label>
+		<label class="control"><span>⇑ Heat lifts <output id="liftValue">0.30</output></span><input id="thermalLift" type="range" value="0.3"><small>how much lighter a hot bead is; drives overturning</small></label>
+		<label class="control"><span>⇑ Archimedes vs size <output id="archValue">-10.00</output></span><input id="archSize" type="range" value="-10"><small>lift scales by size^value, bounded to 1/8–8×</small></label>
+		<label class="control"><span>⇑ Buoyancy strength <output id="buoyancyValue">0.20×</output></span><input id="buoyancy" type="range" value="0.2"><small>0: gravity only · 1×: the density balance</small></label>
 	</section>
 
 	<section class="group" aria-label="Bonds">

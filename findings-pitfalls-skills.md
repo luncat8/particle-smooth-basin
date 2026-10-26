@@ -130,11 +130,30 @@
   then reads 133 cold beads and 19 links, matching the pre-heat-map build. A wash
   drawn with alpha proportional to `|target - 0.5|` is already the honest picture of
   that model.
+- a heat-source map must encode *signed coupling strength* to the cold/hot reservoirs
+  (`0..0.20` and `1.0`), not an intermediate target temperature. Putting the hot band's
+  spatial ramp `w(u)` into the cell target `0.5 + 0.5*w(u)` and *also* weighting the
+  relaxation rate by `|field - 0.5|` squared the heating rate (`w(u)²`), capped floor
+  beads around `0.85` (since the tank floor is at `0.935*H`), and made the upper half of
+  the hot band (`field ~ 0.60`) actively cool rising `0.85` plumes back down — killing
+  convection across `thermal` and `thermalGrow` (0/s overturning vs 20/s and 16/s).
+  Treat `signed = (field - 0.5)*2` as coupling strength toward `1` (hot) or the cold
+  floor (only when warmer), and the wash's `|field - 0.5|` alpha stays linear with the
+  true drive.
 - band edges are the worst step in a solved field (0.2 of the range at a 0.6 cold
   band with a 0.5 gap); a smoothness assertion has to allow one band edge per
   sweep, not demand a flat grid.
 
 ## scene balance
+
+- live coupling presets (`size`, `arch`) also have to carry a matching `buoyancy`. A
+  scene tuned for `arch = -10` runs `buoyancy = 0.2`; retuning only `size` and `arch`
+  to `[-1, -4]` or `[0, 4]` leaves `buoyancy` at `0.2`, sinking the whole bed to the
+  floor with zero links and zero overturning.
+- when a convecting bed sends `T ~ 0.95` plumes through its surface crust, the
+  arithmetic mean temperature of the top slice spikes whenever a plume crests at the
+  sampling frame (~1 in 15 random seeds). Judge the crust with the top slice's median
+  temperature plus total cold-bead count, not the slice mean.
 
 - heat has to change a bead's density, not only its size. A size/Archimedes
   coupling alone (`arch-only`, `flat`, `size-only`, `shrink` variants) left the

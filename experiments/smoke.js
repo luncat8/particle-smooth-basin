@@ -194,17 +194,18 @@ function slider(key) {
 	assert.match(elements.viewToggle.textContent, /temperature/, "defaults restores the shipped view");
 
 	/* every preset in the list is reachable from the select and does what its kind says:
-	   a scene replaces the whole scene, a coupling moves size and arch and nothing else --
-	   whichever preset ran before it */
+	   a scene replaces the whole scene, a coupling moves size, arch and buoyancy and
+	   leaves every other key alone -- whichever preset ran before it */
 	let previous = null;
 	for (const preset of PRESETS) {
 		elements.scenarioPreset.listeners.change({ target: { value: preset.id } });
 		assert.equal(elements.scenarioPreset.value, preset.id, preset.id + " stays selected after applying");
 		const echo = JSON.parse(elements.settingsEcho.textContent.slice("applied ".length).replace(/ · ignored .*/, ""));
 		if (preset.kind === "coupling") {
-			assert.equal(echo.size, preset.size, preset.id + " applies its thermal size");
-			assert.equal(echo.arch, preset.arch, preset.id + " applies its size coupling");
-			const untouched = Object.keys(echo).filter(key => key !== "size" && key !== "arch" && echo[key] !== previous[key]);
+			for (const key of Object.keys(preset.settings)) {
+				assert.equal(echo[key], preset.settings[key], preset.id + " applies " + key);
+			}
+			const untouched = Object.keys(echo).filter(key => !(key in preset.settings) && echo[key] !== previous[key]);
 			assert.deepEqual(untouched, [], preset.id + " leaves every other key alone");
 		} else {
 			assert.deepEqual(echo, preset.settings, preset.id + " applies every scene setting");

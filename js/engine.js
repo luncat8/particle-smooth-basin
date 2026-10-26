@@ -53,9 +53,9 @@ const RANGES = {
 	coldPower: { field: "coldPower", min: 0, max: 4, ui: [0, 4], step: 0.05, group: "rate", label: "Cold speed" },
 	hotPower: { field: "hotPower", min: 0, max: 4, ui: [0, 3.5], step: 0.05, group: "rate", label: "Hot speed" },
 	conduction: { field: "conductionRate", min: 0, max: 4, ui: [0, 2], step: 0.05, group: "rate", label: "Conduction" },
-	lift: { field: "thermalLift", min: 0, max: 1, ui: [0.1, 0.9], step: 0.01, group: "force", label: "Heat lifts" },
-	arch: { field: "archSize", min: -10, max: 10, ui: [-10, 10], step: 0.1, group: "force", label: "Archimedes vs size" },
-	buoyancy: { field: "buoyancy", min: 0, max: 2, ui: [0, 1.2], step: 0.05, group: "force", label: "Buoyancy strength" },
+	lift: { field: "thermalLift", min: 0, max: 1, ui: [0.1, 0.9], step: 0.01, group: "force", label: "⇑ Heat lifts" },
+	arch: { field: "archSize", min: -10, max: 10, ui: [-10, 4], step: 0.1, group: "force", label: "⇑ Archimedes vs size" },
+	buoyancy: { field: "buoyancy", min: 0, max: 2, ui: [0, 1.2], step: 0.05, group: "force", label: "⇑ Buoyancy strength" },
 	size: { field: "sizeResponse", min: -1, max: 1, ui: [-1, 1], step: 0.05, group: "shape", label: "Thermal size" },
 	bonds: { field: "linkStrength", min: 0.2, max: 1, ui: [0.2, 1], step: 0.01, group: "shape", label: "Bond strength" },
 	bondTemp: { field: "linkTempExp", min: 0.5, max: 6, ui: [1, 3], step: 0.1, group: "shape", label: "Bond vs temperature" },
@@ -102,7 +102,7 @@ function createWorld(W, H) {
 		linkPrevKeys: null, linkPrevRest: null,
 		pointer: { x: 0, y: 0, px: 0, py: 0, vx: 0, vy: 0, down: false, grab: -1, zone: "", moved: 0, downT: 0 },
 		acc: 0, waveTick: 0,
-		heat: { gx: 0, gy: 0, cw: 1, ch: 1, field: null, dirty: true, version: 0 },
+		heat: { gx: 0, gy: 0, cw: 1, ch: 1, field: null, target: null, dirty: true, version: 0 },
 	};
 	initLinkHash(world);
 	resizeWorld(world, W, H);
@@ -145,20 +145,22 @@ function initHeatMap(world) {
 	h.cw = world.W / h.gx;
 	h.ch = world.H / h.gy;
 	const cells = h.gx * h.gy;
-	if (!h.field || h.field.length !== cells) h.field = new Float32Array(cells).fill(0.5);
+	if (!h.field || h.field.length !== cells) {
+		h.field = new Float32Array(cells).fill(0.5);
+		h.target = new Float32Array(cells);
+	}
 	h.version++;
 	h.dirty = true;
 }
 
-/* The bands themselves: a share of the window's height, the same numbers the sliders
-   name and the old 1-D source used. */
+/* Signed source profile encoded as 0..1 around 0.5: < 0.5 encodes cold-band coupling
+   strength (1 at the ceiling to 0.4 at coldZoneEnd), 0.5 is zero source, and > 0.5
+   encodes hot-band coupling strength u²(3-2u) rising toward the floor. */
 function bandTarget(world, y) {
 	const coldEnd = world.H * world.coldZoneEnd;
-	if (y < coldEnd) return 0.02 + 0.18 * clamp(y / coldEnd, 0, 1);
+	if (y < coldEnd) return 0.30 * clamp(y / coldEnd, 0, 1);
 	const hotStart = world.H * world.hotZoneStart;
 	if (y <= hotStart) return 0.5;
-	/* the hot band fades in from the neutral gap like the old rate weighting did
-	   (u²(3-2u)), so the field has no hard stripe at the band's upper edge */
 	const u = clamp((y - hotStart) / Math.max(1, world.H - hotStart), 0, 1);
 	return 0.5 + 0.5 * u * u * (3 - 2 * u);
 }
@@ -175,27 +177,28 @@ function heatTarget(world, x, y) {
 	return band + (0.5 - band) * (-inside / margin);
 }
 
-/* Gauss-Seidel: phi = (neighbours + pull*target) / (1 + pull), mirrored at the window
-   edges. Stops when no cell moved more than the tolerance (a warm start converges in
-   a few sweeps, a cold one needs the whole budget). */
+/* Gauss-Seidel: phi = (neighbours + pull*target) / (4 + pull), mirrored at the window
+   edges. Targets are filled once per solve into a preallocated buffer. */
 function solveHeatMap(world) {
 	const h = world.heat;
 	if (!h.dirty) return 0;
-	const gx = h.gx, gy = h.gy, field = h.field, cw = h.cw, ch = h.ch;
+	const gx = h.gx, gy = h.gy, field = h.field, targets = h.target, cw = h.cw, ch = h.ch;
 	const lastX = gx - 1, lastY = gy - 1;
-	const pull = HEAT_PULL;
+	const pull = HEAT_PULL, inv = 1 / (4 + pull);
+	for (let cy = 0; cy < gy; cy++) {
+		const ty = (cy + 0.5) * ch, row = cy * gx;
+		for (let cx = 0; cx < gx; cx++) targets[row + cx] = heatTarget(world, (cx + 0.5) * cw, ty);
+	}
 	let sweeps = 0, change = 1;
 	while (sweeps < HEAT_SWEEPS && change > HEAT_TOLERANCE) {
 		change = 0;
 		for (let cy = 0; cy < gy; cy++) {
-			const up = cy > 0 ? -gx : 0, down = cy < lastY ? gx : 0;
-			const ty = (cy + 0.5) * ch;
+			const up = cy > 0 ? -gx : 0, down = cy < lastY ? gx : 0, row = cy * gx;
 			for (let cx = 0; cx < gx; cx++) {
-				const i = cy * gx + cx;
-				const target = heatTarget(world, (cx + 0.5) * cw, ty);
+				const i = row + cx;
 				const left = cx > 0 ? field[i - 1] : field[i];
 				const right = cx < lastX ? field[i + 1] : field[i];
-				const next = (left + right + field[i + up] + field[i + down] + pull * target) / (4 + pull);
+				const next = (left + right + field[i + up] + field[i + down] + pull * targets[i]) * inv;
 				const delta = next > field[i] ? next - field[i] : field[i] - next;
 				if (delta > change) change = delta;
 				field[i] = next;
@@ -656,20 +659,19 @@ function exchangeHeat(world, h) {
 	const hotRate = sourceRate * world.hotPower;
 	if (coldRate <= 0 && hotRate <= 0 && conductionRate <= 0) return;
 	const temp = world.temp, delta = world.heatDelta;
-	/* A bead relaxes toward the heat map where it sits, but only as far as the map is
-	   off neutral: the cold band chills the top of the tank, the hot band warms the
-	   floor, and the clear middle of the map leaves a bead to its neighbours. Weighting
-	   the rate by the map's distance from 0.5 is what keeps the gap from acting as a
-	   thermostat, which would re-warm the bed as fast as the cold band cooled it.
-	   Which speed applies follows the map, not the bead's own temperature, so a hot
-	   bead rising into the cold band is chilled at the cold speed like any other. */
+	/* The heat map stores signed source strength around 0.5, not a target temperature:
+	   cells < 0.5 pull warmer beads down toward the cold bath floor, cells > 0.5 heat
+	   beads toward 1, and the neutral middle leaves beads to conduction. That keeps
+	   the upper half of the hot band from capping or cooling rising plumes. */
 	if (coldRate > 0 || hotRate > 0) {
 		for (let i = 0; i < world.n; i++) {
-			const ambient = heatAt(world, world.x[i], world.y[i]);
-			const reach = Math.min(1, Math.abs(ambient - 0.5) * 2);
-			if (reach > 0.002) {
-				const rate = (ambient < 0.5 ? coldRate : hotRate) * reach;
-				temp[i] += (ambient - temp[i]) * (1 - Math.exp(-rate * h));
+			const signed = (heatAt(world, world.x[i], world.y[i]) - 0.5) * 2;
+			if (signed < -0.002 && coldRate > 0) {
+				const strength = -signed;
+				const coldFloor = clamp(0.32 - 0.30 * strength, 0.02, 0.20);
+				if (temp[i] > coldFloor) temp[i] += (coldFloor - temp[i]) * (1 - Math.exp(-coldRate * strength * h));
+			} else if (signed > 0.002 && hotRate > 0) {
+				temp[i] += (1 - temp[i]) * (1 - Math.exp(-hotRate * signed * h));
 			}
 			delta[i] = 0;
 		}
@@ -982,8 +984,8 @@ function pointerUp(world, now) {
    the same setters the sliders use.
 
    A PRESETS entry either carries a whole scene (`kind: "scene"`, applied and re-dealt)
-   or only the two couplings (`kind: "coupling"`, applied to the live bed). The list is
-   the select's content and the only place a preset's label lives. */
+   or a live-bed retune (`kind: "coupling"`, setting size, Archimedes exponent and a
+   matching buoyancy so the coupling works after low-buoyancy scenes too). */
 const PRESETS = [
 	{
 		id: "thermal", kind: "scene", label: "Convection · lift by thermal (−size)",
@@ -1025,28 +1027,20 @@ const PRESETS = [
 			conduction: 1, size: -0.35, arch: -2.5, buoyancy: 1, mass: 1, view: "density",
 		},
 	},
-	{ id: "shrinkFlow", kind: "coupling", label: "Hot shrinks · flow only", size: -1, arch: 0 },
-	{ id: "bigFloats", kind: "coupling", label: "Big beads float", size: 0, arch: 4 },
-	{ id: "shrinkConvection", kind: "coupling", label: "Convection · hot shrinks and rises", size: -1, arch: -4 },
-	{ id: "growConvection", kind: "coupling", label: "Convection · hot grows and rises", size: 1, arch: 4 },
-	{ id: "shrinkStable", kind: "coupling", label: "Stable · hot shrinks and sinks", size: -1, arch: 4 },
-	{ id: "growStable", kind: "coupling", label: "Stable · hot grows and sinks", size: 1, arch: -4 },
+	{ id: "shrinkFlow", kind: "coupling", label: "Hot shrinks · flow only", settings: { size: -1, arch: 0, buoyancy: 0.9 } },
+	{ id: "bigFloats", kind: "coupling", label: "Big beads float", settings: { size: 0, arch: 4, buoyancy: 0.6 } },
+	{ id: "shrinkConvection", kind: "coupling", label: "Convection · hot shrinks and rises", settings: { size: -1, arch: -4, buoyancy: 0.55 } },
+	{ id: "growConvection", kind: "coupling", label: "Convection · hot grows and rises", settings: { size: 1, arch: 4, buoyancy: 0.55 } },
+	{ id: "shrinkStable", kind: "coupling", label: "Stable · hot shrinks and sinks", settings: { size: -1, arch: 4, buoyancy: 0.55 } },
+	{ id: "growStable", kind: "coupling", label: "Stable · hot grows and sinks", settings: { size: 1, arch: -4, buoyancy: 0.55 } },
 ];
 
 const SETTINGS = PRESETS[0].settings;
 const PRESET_BY_ID = {};
 for (const preset of PRESETS) PRESET_BY_ID[preset.id] = preset;
 
-/* a scene preset applies its whole table (the caller re-deals); a coupling preset
-   moves only the two couplings and leaves the bed, its fill and its zones alone */
 function applyPreset(world, preset) {
-	if (!preset) return [];
-	if (preset.kind === "coupling") {
-		setSizeResponse(world, preset.size);
-		setArchSize(world, preset.arch);
-		return [];
-	}
-	return applySettings(world, preset.settings);
+	return preset ? applySettings(world, preset.settings) : [];
 }
 
 const round = (value, digits) => Number(Number(value).toFixed(digits));

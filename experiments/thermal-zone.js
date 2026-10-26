@@ -38,16 +38,19 @@ const BOND_HEAT = 0.483;		// above this mean pair temperature a bond is too soft
 const COLD_TEMP = 0.30;
 
 function makeWorld(candidate) {
+	rng = 0x9e3779b9;
 	const world = eng.createWorld(W, H);
-	world.coldZoneEnd = candidate.coldEnd;
-	world.hotZoneStart = candidate.hotStart;
+	eng.setColdZoneEnd(world, candidate.coldEnd);
+	eng.setHotZoneStart(world, candidate.hotStart);
 	return world;
 }
 
 function sample(world) {
 	let links = 0, cold = 0, coldBonds = 0, minT = 1, maxT = 0, sumT = 0, maxV = 0, nan = 0;
-	const topBand = world.tank.y0 + (world.tank.y1 - world.tank.y0) * 0.25;
-	const bottomBand = world.tank.y1 - (world.tank.y1 - world.tank.y0) * 0.25;
+	const ys = Array.prototype.slice.call(world.y, 0, world.n).sort((a, b) => a - b);
+	const top = world.n ? ys[Math.floor(world.n * 0.02)] : world.tank.y0;
+	const span = Math.max(1, world.tank.y1 - top);
+	const topBand = top + span * 0.25, bottomBand = top + span * 0.75;
 	let topSum = 0, topN = 0, bottomSum = 0, bottomN = 0;
 	for (let i = 0; i < world.n; i++) {
 		const t = world.temp[i];

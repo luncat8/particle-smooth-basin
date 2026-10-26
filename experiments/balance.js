@@ -24,7 +24,7 @@ Math.random = () => {
 const BASE = eng.SETTINGS;
 function cand(id, overrides) { return Object.assign({ id }, BASE, overrides); }
 
-const CANDIDATES = [cand("shipped", {})];
+const CANDIDATES = eng.PRESETS.map(preset => cand(preset.id, preset.settings));
 
 const FRAMES = SECONDS * 60;
 const MARKS = [120, 240, 480, FRAMES];
@@ -32,6 +32,7 @@ const MARKS = [120, 240, 480, FRAMES];
 /* build exactly the way the page does: applySettings + spawnBed. Re-deriving the
    world from a hand-picked subset once made this sweep disagree with the app. */
 function build(settings) {
+	rng = 0x9e3779b9;
 	const world = eng.createWorld(W, H);
 	eng.applySettings(world, eng.SETTINGS);
 	eng.applySettings(world, settings);
@@ -163,32 +164,32 @@ function pad(text, width) { return String(text).padEnd(width); }
 function fix(value, digits) { return Number(value).toFixed(digits); }
 
 console.log("balance sweep · " + W + "x" + H + " · " + SECONDS + " s · seeded");
-console.log(pad("candidate", 12) + pad("n", 6) + pad("bedTop", 8) + pad("water", 7) + pad("free 2/4/8/end", 14) + pad("above", 9)
-	+ pad("coldEnd", 9) + pad("links 2/4/8/end", 19) + pad("cold", 6) + pad("top/bottom T", 14)
-	+ pad("flux", 8) + pad("hotUp", 7) + pad("moved", 7) + pad("stir/rec", 10) + pad("maxV", 6) + pad("up/down", 10) + "ms/frame");
+console.log(pad("candidate", 18) + pad("n", 6) + pad("bedTop", 8) + pad("water", 7) + pad("free 2/4/8/end", 18) + pad("above", 10)
+	+ pad("coldEnd", 9) + pad("links 2/4/8/end", 20) + pad("cold", 6) + pad("top/bottom T", 14)
+	+ pad("flux", 8) + pad("hotUp", 7) + pad("moved", 11) + pad("cross", 7) + pad("stir/rec", 11) + pad("maxV", 6) + pad("up/down", 11) + "ms/frame");
 for (const candidate of CANDIDATES) {
 	const result = run(candidate);
 	const marks = result.marks;
 	const links = marks.map(mark => mark.links).join("/");
 	const last = marks[marks.length - 1];
 	const end = result.recovered;
-	console.log(pad(candidate.id, 12)
+	console.log(pad(candidate.id, 18)
 		+ pad(result.geometry.n, 6)
 		+ pad(result.geometry.bedTop, 8)
 		+ pad(result.geometry.waterY, 7)
-		+ pad(result.marks.map(mark => mark.free).join("/"), 13)
-		+ pad(result.marks[result.marks.length - 1].above + "/" + result.geometry.n, 9)
+		+ pad(result.marks.map(mark => mark.free).join("/"), 18)
+		+ pad(result.marks[result.marks.length - 1].above + "/" + result.geometry.n, 10)
 		+ pad(Math.round(candidate.coldEnd * H) + "px", 9)
-		+ pad(links, 19)
+		+ pad(links, 20)
 		+ pad(last.cold, 6)
 		+ pad(fix(last.topT, 2) + "/" + fix(last.bottomT, 2), 14)
 		+ pad(fix(result.fluxMean, 1), 8)
 		+ pad(fix(result.hotUpMean * 100, 0) + "%", 7)
-		+ pad(fix(result.travel, 0) + "px/" + fix(result.travelled * 100, 0) + "%", 9)
+		+ pad(fix(result.travel, 0) + "px/" + fix(result.travelled * 100, 0) + "%", 11)
 		+ pad(fix(result.crossings, 1), 7)
-		+ pad(result.afterStir.links + "/" + end.links, 10)
+		+ pad(result.afterStir.links + "/" + end.links, 11)
 		+ pad(fix(last.maxV, 0), 6)
-		+ pad(fix(result.hotRise, 1) + "/" + fix(result.coldSink, 1), 9)
+		+ pad(fix(result.hotRise, 1) + "/" + fix(result.coldSink, 1), 11)
 		+ fix(result.msPerFrame, 2)
 		+ (last.nan ? "  NaN=" + last.nan : ""));
 }

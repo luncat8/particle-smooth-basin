@@ -135,8 +135,8 @@ function applyAndDeal(settings, presetId) {
 	return ignored;
 }
 
-/* a scene preset re-deals the bed; a coupling preset moves only the two couplings and
-   leaves the bed, its fill and its bands alone */
+/* a scene preset re-deals the bed; a coupling preset retunes size, arch and buoyancy
+   on the live bed while leaving its fill, water and bands alone */
 function applyPresetById(preset) {
 	const ignored = applyPreset(world, preset);
 	activePreset = preset.id;

@@ -67,14 +67,15 @@ assert.equal(view.view, "temp", "an unknown view falls back to temperature");
 eng.applySettings(view, { view: "density" });
 assert.equal(eng.readSettings(view).view, "density", "density view survives a round trip");
 
-/* 7) every preset is a complete, pasteable scene; couplings touch only their two keys */
+/* 7) every preset is a complete, pasteable scene; couplings touch only their force keys */
 for (const preset of eng.PRESETS) {
 	const target = world();
 	eng.applyPreset(target, preset);
 	if (preset.kind === "coupling") {
 		const read = eng.readSettings(target);
-		assert.equal(read.size, preset.size, preset.id + " sets thermal size");
-		assert.equal(read.arch, preset.arch, preset.id + " sets the size coupling");
+		assert.equal(read.size, preset.settings.size, preset.id + " sets thermal size");
+		assert.equal(read.arch, preset.settings.arch, preset.id + " sets the size coupling");
+		assert.equal(read.buoyancy, preset.settings.buoyancy, preset.id + " sets buoyancy for the coupling");
 		assert.equal(read.fill, shipped.fill, preset.id + " leaves the scene alone");
 		assert.equal(read.coldEnd, shipped.coldEnd, preset.id + " leaves the bands alone");
 		continue;
@@ -132,5 +133,55 @@ assert.equal(nan, 0, "the shipped scene stays finite for 10 s");
 assert.ok(maxV < 1000, "no bead runs away, max|v| " + Math.round(maxV) + " px/s");
 assert.ok(scene.linkActiveN > 0, "the shipped scene forms some bonds, " + scene.linkActiveN + " active links");
 
+/* 12) every scene preset heats its floor near 1 and overturns; live couplings work on the shipped bed */
+function measurePreset(base, coupling, frames) {
+	let rng = 0x9e3779b9;
+	const savedRandom = Math.random;
+	Math.random = () => {
+		rng ^= rng << 13; rng ^= rng >>> 17; rng ^= rng << 5;
+		return (rng >>> 0) / 4294967296;
+	};
+	try {
+		const w = world();
+		eng.applyPreset(w, base);
+		eng.spawnBed(w);
+		if (coupling) eng.applyPreset(w, coupling);
+		const ys = Array.prototype.slice.call(w.y, 0, w.n).sort((a, b) => a - b);
+		const midY = (ys[Math.floor(w.n * 0.02)] + w.tank.y1) / 2;
+		const wasUp = new Uint8Array(w.n);
+		let hotRise = 0;
+		for (let f = 0; f < frames; f++) {
+			eng.stepWorld(w, 1 / 60);
+			for (let i = 0; i < w.n; i++) {
+				const up = w.y[i] < midY ? 1 : 0;
+				if (up === wasUp[i]) continue;
+				wasUp[i] = up;
+				if (up && w.temp[i] > 0.6) hotRise++;
+			}
+		}
+		let maxT = 0;
+		for (let i = 0; i < w.n; i++) if (w.temp[i] > maxT) maxT = w.temp[i];
+		return { maxT, links: w.linkActiveN, hotRise };
+	} finally {
+		Math.random = savedRandom;
+	}
+}
+
+for (const preset of eng.PRESETS) {
+	if (preset.kind !== "scene") continue;
+	const m = measurePreset(preset, null, 1080);
+	assert.ok(m.maxT > 0.90, preset.id + " heats floor beads above 0.90, got " + m.maxT.toFixed(2));
+	assert.ok(m.links > 10, preset.id + " forms a cold crust, got " + m.links + " links");
+	assert.ok(m.hotRise >= 20, preset.id + " overturns hot beads above mid-bed, got " + m.hotRise);
+}
+for (const id of ["shrinkConvection", "growConvection"]) {
+	const m = measurePreset(eng.PRESETS[0], eng.PRESET_BY_ID[id], 720);
+	assert.ok(m.links > 50 && m.hotRise >= 40, id + " convects and bonds on the shipped bed, got links=" + m.links + " rise=" + m.hotRise);
+}
+for (const id of ["shrinkStable", "growStable"]) {
+	const m = measurePreset(eng.PRESETS[0], eng.PRESET_BY_ID[id], 720);
+	assert.ok(m.links > 50 && m.hotRise < 10, id + " stays stratified on the shipped bed, got links=" + m.links + " rise=" + m.hotRise);
+}
+
 console.log("settings checks: round trip, partial paste, unknown keys, clamping, live fields, view mode, presets,"
-	+ " heat map geometry and 10 s stability passed");
+	+ " heat map geometry, 10 s stability and preset overturning passed");
