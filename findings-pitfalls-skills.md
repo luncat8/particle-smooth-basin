@@ -144,6 +144,26 @@
   band with a 0.5 gap); a smoothness assertion has to allow one band edge per
   sweep, not demand a flat grid.
 
+- a two-way heat field is not a symmetric exchange in this model. The field is a
+  *source strength*: a warm cell drives beads toward 1 further, it does not drive them
+  toward the cell. Writing a bead's raw temperature in (`target = band + feed·(T − 0.5)`)
+  therefore amplifies instead of equalizing — a dense hot bed heats its own water and
+  then itself, and the shipped scene went from a cold crust to a fully hot tank at
+  `feed ≥ 0.75`. Blending the cell toward the bead instead
+  (`target = band + feed·m·(T − band)`, `m` the covered share of the cell) writes nothing
+  for a bead that already sits at its cell's temperature, which is what keeps the
+  coupling near the scenes' own balance. Measure drift and crust counts, not the look.
+- the field a bead reads is diffused and clipped, so a single bead's write can never be
+  read back at full strength: at 400×300 one bead fills its 8×8 px cell six times over
+  and still moved the interpolated read at its centre by a quarter of the cell value.
+  Assert on the cell (`field[cy·gx + cx]`), or on a feed-0 baseline of the same world,
+  and sample where the bead actually is — a bead that fell 0.4 px crossed the row edge
+  and the test read the neighbouring, cold cell.
+- a scene check that deals an unseeded bed flakes: one seed in three laid a bed that
+  never reached the cold band, and the failure looks exactly like a regression. Seed the
+  harness check (`withSeed`) the way the experiments already do, and keep the seed in
+  the log so two runs can be compared.
+
 ## scene balance
 
 - live coupling presets (`size`, `arch`) also have to carry a matching `buoyancy`. A

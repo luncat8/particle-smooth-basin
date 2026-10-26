@@ -209,4 +209,63 @@ const represented = coverage.n * Math.PI * 1.027 * coverage.rBar * coverage.rBar
 assert.ok(Math.abs(represented - 0.3) < 0.004, "bed count matches requested coverage within count quantization");
 assert.ok(coverage.n <= eng.SPAWN_CAP, "spawn respects the particle cap");
 
-console.log("thermal checks: rates, sizing, buoyancy, size coupling, thawing links, pointer, wave steps and coverage passed");
+
+/* Two-way heat: beads write the water they sit in, the bands stay the reservoir.
+   A lone bead in the neutral middle must move the field at its own cell, feed 0 must
+   leave the field to the bands alone, and turning the feed off must drop the wake
+   instead of freezing it into the picture. */
+const lone = eng.createWorld(640, 480);
+assert.equal(lone.heatFeed, eng.SETTINGS.feed, "the heat feed defaults to the shipped preset");
+eng.setHeatFeed(lone, 5);
+assert.equal(lone.heatFeed, 1, "the heat feed clamps to 1");
+eng.setHeatFeed(lone, -1);
+assert.equal(lone.heatFeed, 0, "the heat feed clamps to 0");
+eng.setHeatFeed(lone, 0);
+
+/* one bead, parked in the neutral middle of the window (band value 0.5) */
+function parkedBead(world, temp, feed) {
+	world.n = 1;
+	world.x[0] = 320; world.y[0] = 240;
+	world.px[0] = 320; world.py[0] = 240;
+	world.vx[0] = 0; world.vy[0] = 0;
+	world.r[0] = 12; world.baseSize[0] = 12 / world.rBar;
+	world.dens[0] = 1; world.invM[0] = 1 / 144;
+	world.temp[0] = temp;
+	eng.setHeatFeed(world, feed);
+	eng.solveHeatMap(world);
+	for (let f = 0; f < 6; f++) eng.stepWorld(world, 1 / 60);
+}
+
+const middle = (world) => eng.heatAt(world, 320, 240);
+const quiet = eng.createWorld(640, 480);
+parkedBead(quiet, 0.5, 0);
+const bandMiddle = middle(quiet);
+const quietVersion = quiet.heat.version;
+for (let f = 0; f < 20; f++) eng.stepWorld(quiet, 1 / 60);
+assert.equal(quiet.heat.version, quietVersion, "feed 0 leaves the field to the bands");
+assert.ok(Math.abs(middle(quiet) - 0.5) < 0.02, "the neutral middle stays neutral with the feed off, got " + middle(quiet).toFixed(2));
+
+const warmed = eng.createWorld(640, 480);
+parkedBead(warmed, 1, 1);
+assert.ok(middle(warmed) > bandMiddle + 0.05, "a hot bead lifts the field at its cell to " + middle(warmed).toFixed(2));
+const chilled = eng.createWorld(640, 480);
+parkedBead(chilled, 0, 1);
+assert.ok(middle(chilled) < bandMiddle - 0.05, "a cold bead lowers the field at its cell to " + middle(chilled).toFixed(2));
+
+/* the field is a live medium, not a record: turning the feed off clears the wake */
+eng.setHeatFeed(warmed, 0);
+eng.stepWorld(warmed, 1 / 60);
+assert.ok(Math.abs(middle(warmed) - 0.5) < 0.02, "feed 0 clears the bead-written field, got " + middle(warmed).toFixed(2));
+
+/* and it stays bounded and finite through a splash at full feed */
+const flooded = eng.createWorld(640, 480);
+eng.setHeatFeed(flooded, 1);
+for (let f = 0; f < 60; f++) eng.stepWorld(flooded, 1 / 60);
+eng.splash(flooded);
+for (let f = 0; f < 120; f++) eng.stepWorld(flooded, 1 / 60);
+for (let i = 0; i < flooded.heat.field.length; i++) {
+	const value = flooded.heat.field[i];
+	assert.ok(isFinite(value) && value >= 0 && value <= 1, "the field stays inside 0..1, got " + value + " at cell " + i);
+}
+
+console.log("thermal checks: rates, sizing, buoyancy, size coupling, thawing links, pointer, wave steps, coverage and the heat feed passed");

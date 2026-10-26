@@ -38,6 +38,7 @@ const WAVE_REACT = 22;		// px/s per ripple kick unit: reaction impulse on the be
    zones applied by the solver. */
 const COLD_ZONE_END = 0.30;	// share of H cooled from the top, and drawn as the cold gradient
 const HOT_ZONE_START = 0.75;	// share of H where the heated bottom band starts
+const HEAT_FEED_DEFAULT = 0.2;	// share of a bead's own temperature written into its cell
 const PAL_LIGHT = 6;		// sprite palette: 0..5 light beads, 6..11 deep
 const HEAT_GRID = 48;		// cells along the longer side of the window heat map
 
@@ -53,6 +54,7 @@ const RANGES = {
 	coldPower: { field: "coldPower", min: 0, max: 4, ui: [0, 4], step: 0.05, group: "rate", label: "Cold speed" },
 	hotPower: { field: "hotPower", min: 0, max: 4, ui: [0, 3.5], step: 0.05, group: "rate", label: "Hot speed" },
 	conduction: { field: "conductionRate", min: 0, max: 4, ui: [0, 2], step: 0.05, group: "rate", label: "Conduction" },
+	feed: { field: "heatFeed", min: 0, max: 1, ui: [0, 1], step: 0.01, group: "rate", label: "Heat feed" },
 	lift: { field: "thermalLift", min: 0, max: 1, ui: [0.1, 0.9], step: 0.01, group: "force", label: "⇑ Heat lifts" },
 	arch: { field: "archSize", min: -10, max: 10, ui: [-10, 4], step: 0.1, group: "force", label: "⇑ Archimedes vs size" },
 	buoyancy: { field: "buoyancy", min: 0, max: 2, ui: [0, 1.2], step: 0.05, group: "force", label: "⇑ Buoyancy strength" },
@@ -76,7 +78,8 @@ function createWorld(W, H) {
 		grav: 1850,			// px/s^2, rescaled with screen height
 		rBar: DEFAULT_RADIUS, rMax: 24,
 		fillFraction: DEFAULT_FILL, typicalRadius: DEFAULT_RADIUS, massScale: 1,
-		sourceRate: 1, conductionRate: 0.25, sizeResponse: DEFAULT_SIZE, archSize: DEFAULT_ARCH, buoyancy: 0.2, thermalLift: THERMAL_LIFT,
+		sourceRate: 1, conductionRate: 0.25, heatFeed: HEAT_FEED_DEFAULT,
+		sizeResponse: DEFAULT_SIZE, archSize: DEFAULT_ARCH, buoyancy: 0.2, thermalLift: THERMAL_LIFT,
 		coldZoneEnd: COLD_ZONE_END, hotZoneStart: HOT_ZONE_START,
 		coldPower: COLD_POWER, hotPower: HOT_POWER,
 		linkStrength: LINK_STRENGTH, linkTempExp: LINK_TEMP_EXP, linkHeatMax: LINK_HEAT_MAX,
@@ -102,7 +105,7 @@ function createWorld(W, H) {
 		linkPrevKeys: null, linkPrevRest: null,
 		pointer: { x: 0, y: 0, px: 0, py: 0, vx: 0, vy: 0, down: false, grab: -1, zone: "", moved: 0, downT: 0 },
 		acc: 0, waveTick: 0,
-		heat: { gx: 0, gy: 0, cw: 1, ch: 1, field: null, target: null, dirty: true, version: 0 },
+		heat: { gx: 0, gy: 0, cw: 1, ch: 1, field: null, band: null, target: null, bead: null, cover: null, dirty: true, version: 0, bandVersion: 0 },
 	};
 	initLinkHash(world);
 	resizeWorld(world, W, H);
@@ -124,18 +127,22 @@ function resizeWorld(world, W, H) {
 }
 
 /* ------------------------- heat map -------------------------
-   The room has one temperature field on a coarse grid, and every bead reads it where
-   it is. The target profile is the two bands the sliders place: cold from the top of
-   the window down to `coldZoneEnd`, hot from `hotZoneStart` to the floor, neutral
-   between them and neutral outside the tank. The field is the smooth (diffused)
-   version of that profile: it is what the renderer paints in the background and what
-   the solver relaxes beads toward, so the picture, the physics and the heat-map view
-   can never disagree. Solving is a Gauss-Seidel relaxation, warm-started from the
-   previous field, and it runs once per frame at most (only when the bands move). */
+   The room has one field on a coarse grid, and every bead reads it where it is. The
+   band profile is the two bands the sliders place: cold from the top of the window down
+   to `coldZoneEnd`, hot from `hotZoneStart` to the floor, neutral between them and
+   neutral outside the tank. Beads write their own temperature back into the cells they
+   cover (`heatFeed`), and a cell's target is the band profile blended toward that write,
+   so a cold crust chills the water it sits in and a plume drags a warm wake. The field is
+   the smooth (diffused) version of those targets: it is what the renderer paints in the
+   background and what the solver relaxes beads toward, so the picture, the physics and
+   the heat-map view can never disagree. Solving is a Gauss-Seidel relaxation, warm
+   started from the previous field: a full settle when the band geometry moves, a few
+   sweeps per frame while beads feed it. */
 
 const HEAT_PULL = 3;		// how hard a cell holds its band target vs its neighbours
 const HEAT_MARGIN_CELLS = 2;	// the glass fades the band out over this many cells
-const HEAT_SWEEPS = 240;	// upper bound per solve; warm starts stop much earlier
+const HEAT_SWEEPS = 240;	// upper bound per band solve; warm starts stop much earlier
+const HEAT_LIVE_SWEEPS = 6;	// sweeps per frame while beads feed the map
 const HEAT_TOLERANCE = 5e-4;
 
 function initHeatMap(world) {
@@ -147,9 +154,13 @@ function initHeatMap(world) {
 	const cells = h.gx * h.gy;
 	if (!h.field || h.field.length !== cells) {
 		h.field = new Float32Array(cells).fill(0.5);
+		h.band = new Float32Array(cells);
 		h.target = new Float32Array(cells);
+		h.bead = new Float32Array(cells);
+		h.cover = new Float32Array(cells);
 	}
 	h.version++;
+	h.bandVersion++;
 	h.dirty = true;
 }
 
@@ -165,10 +176,10 @@ function bandTarget(world, y) {
 	return 0.5 + 0.5 * u * u * (3 - 2 * u);
 }
 
-/* What a cell is pulled toward: the band profile inside the tank, fading to the room's
+/* The band profile at a world position: its value inside the tank, fading to the room's
    neutral 0.5 through the glass, so the tank is a body sitting in a neutral room and
    the map has soft edges instead of cut-off bands. */
-function heatTarget(world, x, y) {
+function bandProfileAt(world, x, y) {
 	const t = world.tank, band = bandTarget(world, y);
 	const inside = Math.min(x - t.x0, t.x1 - x);	// the open top and the floor keep the band
 	if (inside >= 0) return band;
@@ -179,18 +190,58 @@ function heatTarget(world, x, y) {
 
 /* Gauss-Seidel: phi = (neighbours + pull*target) / (4 + pull), mirrored at the window
    edges. Targets are filled once per solve into a preallocated buffer. */
-function solveHeatMap(world) {
+function fillHeatBands(world) {
+	const h = world.heat, gx = h.gx, gy = h.gy, cw = h.cw, ch = h.ch, band = h.band;
+	for (let cy = 0; cy < gy; cy++) {
+		const y = (cy + 0.5) * ch, row = cy * gx;
+		for (let cx = 0; cx < gx; cx++) band[row + cx] = bandProfileAt(world, (cx + 0.5) * cw, y);
+	}
+}
+
+/* Beads also write into the map: one cell per bead, area-weighted, accumulating the
+   bead temperature and the share of the cell the beads cover. */
+function splatBeadHeat(world) {
+	const h = world.heat, bead = h.bead, cover = h.cover;
+	bead.fill(0);
+	cover.fill(0);
+	const gx = h.gx, gy = h.gy, invCell = 1 / (h.cw * h.ch);
+	const temp = world.temp, r = world.r, x = world.x, y = world.y;
+	for (let i = 0; i < world.n; i++) {
+		let cx = (x[i] / h.cw) | 0;
+		if (cx < 0) cx = 0; else if (cx >= gx) cx = gx - 1;
+		let cy = (y[i] / h.ch) | 0;
+		if (cy < 0) cy = 0; else if (cy >= gy) cy = gy - 1;
+		const c = cy * gx + cx;
+		const w = Math.PI * r[i] * r[i] * invCell;
+		bead[c] += temp[i] * w;
+		cover[c] += w;
+	}
+}
+
+/* Beads exchange heat with the water in their cell: target = band + feed*m*(Tbead - band),
+   m the covered share of the cell (1 when packed). Blending toward the bead's own
+   temperature instead of toward "hot = 1" is what keeps a bead that already sits at its
+   cell's temperature from writing anything -- a bed of hot beads would otherwise heat
+   its own water and then itself, doubling the band drive. */
+function fillHeatTargets(world) {
+	const h = world.heat, band = h.band, target = h.target, bead = h.bead, cover = h.cover;
+	const feed = world.heatFeed;
+	if (!feed) { target.set(band); return; }
+	for (let i = 0; i < band.length; i++) {
+		const c = cover[i];
+		if (c <= 0) { target[i] = band[i]; continue; }
+		const m = c > 1 ? 1 : c;
+		target[i] = clamp(band[i] + feed * m * (bead[i] / c - band[i]), 0, 1);
+	}
+}
+
+function relaxHeat(world, maxSweeps) {
 	const h = world.heat;
-	if (!h.dirty) return 0;
-	const gx = h.gx, gy = h.gy, field = h.field, targets = h.target, cw = h.cw, ch = h.ch;
+	const gx = h.gx, gy = h.gy, field = h.field, targets = h.target;
 	const lastX = gx - 1, lastY = gy - 1;
 	const pull = HEAT_PULL, inv = 1 / (4 + pull);
-	for (let cy = 0; cy < gy; cy++) {
-		const ty = (cy + 0.5) * ch, row = cy * gx;
-		for (let cx = 0; cx < gx; cx++) targets[row + cx] = heatTarget(world, (cx + 0.5) * cw, ty);
-	}
 	let sweeps = 0, change = 1;
-	while (sweeps < HEAT_SWEEPS && change > HEAT_TOLERANCE) {
+	while (sweeps < maxSweeps && change > HEAT_TOLERANCE) {
 		change = 0;
 		for (let cy = 0; cy < gy; cy++) {
 			const up = cy > 0 ? -gx : 0, down = cy < lastY ? gx : 0, row = cy * gx;
@@ -206,7 +257,33 @@ function solveHeatMap(world) {
 		}
 		sweeps++;
 	}
+	return sweeps;
+}
+
+/* Band geometry moved (resize, a band drag, a paste): refill the profile and settle the
+   whole field, so the bands never look ragged mid-drag. */
+function solveHeatMap(world) {
+	const h = world.heat;
+	if (!h.dirty) return 0;
+	fillHeatBands(world);
+	fillHeatTargets(world);
+	const sweeps = relaxHeat(world, HEAT_SWEEPS);
 	h.dirty = false;
+	h.version++;
+	h.bandVersion++;
+	return sweeps;
+}
+
+/* Once per frame the beads write into the cells they occupy and the field follows. The
+   targets move at bead speed, so a few sweeps per frame track them and the wake trails
+   the bead by a few frames, which is what makes it read as a wake. At feed 0 the bands
+   stay the only source and the field is left alone. */
+function updateHeatField(world) {
+	const h = world.heat;
+	if (h.dirty || !world.heatFeed || world.n === 0) return 0;
+	splatBeadHeat(world);
+	fillHeatTargets(world);
+	const sweeps = relaxHeat(world, HEAT_LIVE_SWEEPS);
 	h.version++;
 	return sweeps;
 }
@@ -383,6 +460,13 @@ function setSourceRate(world, value) {
 
 function setConductionRate(world, value) {
 	world.conductionRate = clampSetting("conduction", value);
+}
+
+/* Feed 0 makes the bands the only source again: re-solve so the wakes are gone rather
+   than frozen into the picture. */
+function setHeatFeed(world, value) {
+	world.heatFeed = clampSetting("feed", value);
+	if (world.heatFeed <= 0) world.heat.dirty = true;
 }
 
 function setSizeResponse(world, value) {
@@ -894,6 +978,7 @@ function stepWorld(world, dt) {
 		}
 	}
 	if (steps === MAX_STEPS) world.acc = 0;	// drop backlog on slow frames
+	updateHeatField(world);
 }
 
 /* ------------------------- pointer ------------------------- */
@@ -992,7 +1077,7 @@ const PRESETS = [
 		settings: {
 			fill: 0.4, radius: 14, water: 0.3, coldEnd: 0.3, hotStart: 0.75,
 			coldPower: 0.7, hotPower: 2, lift: 0.3, bonds: 0.4, bondTemp: 2.5,
-			conduction: 0.25, size: -1, arch: -10, buoyancy: 0.2, mass: 1, view: "temp",
+			conduction: 0.25, feed: HEAT_FEED_DEFAULT, size: -1, arch: -10, buoyancy: 0.2, mass: 1, view: "temp",
 		},
 	},
 	{
@@ -1000,7 +1085,7 @@ const PRESETS = [
 		settings: {
 			fill: 0.3, radius: 14, water: 0.3, coldEnd: 0.3, hotStart: 0.75,
 			coldPower: 1, hotPower: 2, lift: 0.8, bonds: 0.4, bondTemp: 2.5,
-			conduction: 0.1, size: -1, arch: -4, buoyancy: 0.55, mass: 1, view: "temp",
+			conduction: 0.1, feed: 0.05, size: -1, arch: -4, buoyancy: 0.55, mass: 1, view: "temp",
 		},
 	},
 	{
@@ -1008,7 +1093,7 @@ const PRESETS = [
 		settings: {
 			fill: 0.4, radius: 14, water: 0.3, coldEnd: 0.4, hotStart: 0.75,
 			coldPower: 1, hotPower: 2, lift: 0.5, bonds: 0.5, bondTemp: 2, conduction: 1,
-			size: 1, arch: 2, buoyancy: 0.85, mass: 1, view: "temp",
+			feed: 0.1, size: 1, arch: 2, buoyancy: 0.85, mass: 1, view: "temp",
 		},
 	},
 	{
@@ -1016,7 +1101,7 @@ const PRESETS = [
 		settings: {
 			fill: 0.56, radius: 14, water: 0.3, coldEnd: 0.4, hotStart: 0.75,
 			coldPower: 1, hotPower: 2, lift: 0.7, bonds: 0.9, bondTemp: 1.5, conduction: 1.9,
-			size: -1, arch: -5, buoyancy: 0.3, mass: 1, view: "temp",
+			feed: 0.1, size: -1, arch: -5, buoyancy: 0.3, mass: 1, view: "temp",
 		},
 	},
 	{
@@ -1024,7 +1109,7 @@ const PRESETS = [
 		settings: {
 			fill: 0.21, radius: 14, water: 0.3, coldEnd: 0.56, hotStart: 0.78,
 			coldPower: 2.5, hotPower: 2.5, lift: 0.4, bonds: 0.72, bondTemp: 2,
-			conduction: 1, size: -0.35, arch: -2.5, buoyancy: 1, mass: 1, view: "density",
+			conduction: 1, feed: 0.15, size: -0.35, arch: -2.5, buoyancy: 1, mass: 1, view: "density",
 		},
 	},
 	{ id: "shrinkFlow", kind: "coupling", label: "Hot shrinks · flow only", settings: { size: -1, arch: 0, buoyancy: 0.9 } },
@@ -1058,6 +1143,7 @@ function readSettings(world) {
 		bonds: round(world.linkStrength, 2),
 		bondTemp: round(world.linkTempExp, 1),
 		conduction: round(world.conductionRate, 2),
+		feed: round(world.heatFeed, 2),
 		size: round(world.sizeResponse, 2),
 		arch: round(world.archSize, 1),
 		buoyancy: round(world.buoyancy, 2),
@@ -1080,6 +1166,7 @@ const SETTERS = {
 	bonds: setBondStrength,
 	bondTemp: setBondTempExp,
 	conduction: setConductionRate,
+	feed: setHeatFeed,
 	size: setSizeResponse,
 	arch: setArchSize,
 	buoyancy: setBuoyancy,
@@ -1108,15 +1195,15 @@ if (typeof module !== "undefined" && module.exports) {
 	module.exports = {
 		createWorld, resizeWorld, stepWorld, substep,
 		spawnBed, addBead, splash, rollDensity, submergedFrac,
-		setSourceRate, setConductionRate, setSizeResponse, setArchSize, setBuoyancy,
+		setSourceRate, setConductionRate, setHeatFeed, setSizeResponse, setArchSize, setBuoyancy,
 		setTypicalRadius, setFillFraction, setMassScale, setWaterFrac,
 		setColdZoneEnd, setHotZoneStart, setColdPower, setHotPower, setThermalLift,
 		setBondStrength, setBondTempExp, setView,
 		SETTINGS, PRESETS, PRESET_BY_ID, applyPreset, readSettings, applySettings, setSetting, SETTERS,
-		RANGES, solveHeatMap, heatAt, heatTarget,
+		RANGES, solveHeatMap, updateHeatField, heatAt, bandProfileAt,
 		disturb, pickBead, pickZone, pointerMove, pointerDown, pointerUp, ZONE_LINES,
 		SPAWN_CAP, WATER_FRAC, DEFAULT_FILL, DEFAULT_RADIUS, SUBSTEP,
 		COLD_ZONE_END, HOT_ZONE_START, LINK_HEAT_MAX, LINK_STRENGTH, LINK_TEMP_EXP, THERMAL_LIFT,
-		HEAT_GRID,
+		HEAT_GRID, HEAT_FEED_DEFAULT,
 	};
 }

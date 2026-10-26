@@ -109,7 +109,7 @@ function waitFor(predicate, label, timeoutMs) {
 
 	const checks = harness.checks();
 	console.log("checks: " + checks.map(check => check.id + "=" + (check.ok ? "ok" : check.detail)).join(" · "));
-	assert.equal(checks.length, 8, "eight checks run");
+	assert.equal(checks.length, 9, "nine checks run");
 	assert.ok(checks.some(check => check.id === "thermal-zone" && /bonds/.test(check.detail) && /above water/.test(check.detail)),
 		"the default-rate thermal zone check reports bond counts");
 	for (const check of checks) assert.ok(check.ok, "check " + check.id + " failed: " + check.detail);
@@ -143,7 +143,7 @@ function waitFor(predicate, label, timeoutMs) {
 
 	const passing = harness.summarise(checks, rows);
 	assert.ok(passing.ok, "summary passes when every check and case is inside budget");
-	assert.match(passing.line, new RegExp("^RESULT pass · checks 8/8 · perf 1/1 within " + BUDGET + " ms"));
+	assert.match(passing.line, new RegExp("^RESULT pass · checks 9/9 · perf 1/1 within " + BUDGET + " ms"));
 	const failing = harness.summarise(checks.map((check, index) => (index === 0 ? { id: check.id, ok: false } : check)), rows);
 	assert.equal(failing.ok, false, "summary fails when a check fails");
 	assert.match(failing.line, /^RESULT fail/);
@@ -169,8 +169,8 @@ function waitFor(predicate, label, timeoutMs) {
 	assert.match(posted[0].body, /browser tests 0\.3\.2 · \d{4}-\d\d-\d\d/, "the posted log names its version and date");
 	assert.match(posted[0].body, /check boot ok · /);
 	assert.match(posted[0].body, /perf default dpr1 · n=\d+/);
-	assert.match(posted[0].body, new RegExp("RESULT pass · checks 8/8 · perf 3/3 within " + BUDGET + " ms"));
-	assert.match(sandboxHost.elements.status.textContent, /^PASS · checks 8\/8/, "status line carries the verdict");
+	assert.match(posted[0].body, new RegExp("RESULT pass · checks 9/9 · perf 3/3 within " + BUDGET + " ms"));
+	assert.match(sandboxHost.elements.status.textContent, /^PASS · checks 9\/9/, "status line carries the verdict");
 	assert.match(sandboxHost.elements.out.textContent, /RESULT pass/, "the page's log element holds the report");
 
 	/* pressing Save again must neither post nor drop the saved highlight */

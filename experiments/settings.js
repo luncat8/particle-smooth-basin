@@ -32,7 +32,7 @@ assert.deepEqual(eng.applySettings(world(), { __proto__: null, nope: 1 }), ["nop
 
 /* 4) a paste cannot drive the world outside the shared ranges */
 const clamped = world();
-eng.applySettings(clamped, { fill: 0.001, water: 0.99, coldEnd: 0.99, hotStart: 0.01, lift: 5, bondTemp: 99, radius: 1, conduction: 9 });
+eng.applySettings(clamped, { fill: 0.001, water: 0.99, coldEnd: 0.99, hotStart: 0.01, lift: 5, bondTemp: 99, radius: 1, conduction: 9, feed: 9 });
 const limits = eng.readSettings(clamped);
 for (const key of Object.keys(eng.RANGES)) {
 	if (key === "coldEnd" || key === "hotStart") continue;	// checked below, they depend on each other
@@ -78,6 +78,7 @@ for (const preset of eng.PRESETS) {
 		assert.equal(read.buoyancy, preset.settings.buoyancy, preset.id + " sets buoyancy for the coupling");
 		assert.equal(read.fill, shipped.fill, preset.id + " leaves the scene alone");
 		assert.equal(read.coldEnd, shipped.coldEnd, preset.id + " leaves the bands alone");
+		assert.equal(read.feed, shipped.feed, preset.id + " leaves the heat feed alone");
 		continue;
 	}
 	assert.deepEqual(eng.readSettings(target), preset.settings, preset.id + " applies every scene key");
@@ -184,4 +185,4 @@ for (const id of ["shrinkStable", "growStable"]) {
 }
 
 console.log("settings checks: round trip, partial paste, unknown keys, clamping, live fields, view mode, presets,"
-	+ " heat map geometry, 10 s stability and preset overturning passed");
+	+ " heat map geometry, 10 s stability, preset overturning and the heat feed passed");

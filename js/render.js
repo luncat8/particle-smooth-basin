@@ -282,8 +282,8 @@ function render(ctx, world, a) {
 		waterLabel = "WATER LEVEL \u00B7 " + Math.round(world.waterFrac * 100) + "%";
 	}
 	ctx.fillText(waterLabel, t.x1 - 14, waterY - 10);
-	if (zoneLabelVersion !== world.heat.version) {
-		zoneLabelVersion = world.heat.version;
+	if (zoneLabelVersion !== world.heat.bandVersion) {	// the field changes every frame now, the bands rarely
+		zoneLabelVersion = world.heat.bandVersion;
 		zoneLabelTop = "COLD BAND END \u00B7 " + Math.round(world.coldZoneEnd * 100) + "%";
 		zoneLabelHot = "HOT BAND START \u00B7 " + Math.round(world.hotZoneStart * 100) + "%";
 	}

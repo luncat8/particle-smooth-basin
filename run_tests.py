@@ -5,8 +5,9 @@
     browser. Two phases land in the same timestamped log under experiments/logs/:
 
       1. node checks - experiments/smoke.js, experiments/thermal.js, experiments/bench.js,
-         experiments/thermal-zone.js (zone geometry and rate sweep), experiments/settings.js
-         (the copy/paste settings round trip) and experiments/harness.js (the tests.html
+         experiments/thermal-zone.js (zone geometry and rate sweep), experiments/heat-feed.js
+         (two-way heat drift and cost), experiments/settings.js (the copy/paste settings
+         round trip) and experiments/harness.js (the tests.html
          lint). Echoed and written as they run.
       2. browser tests - tests.html runs its checks and the frame-profile matrix, then
          POSTs its log to this server, which appends it to the same file. The page also
@@ -54,7 +55,8 @@ ROOT = Path(__file__).resolve().parent
 LOG_DIR = ROOT / "experiments" / "logs"
 VERSION_FILE = ROOT / "VERSION"
 NODE_CHECKS = ["experiments/smoke.js", "experiments/thermal.js", "experiments/bench.js",
-               "experiments/thermal-zone.js", "experiments/settings.js", "experiments/harness.js"]
+               "experiments/thermal-zone.js", "experiments/heat-feed.js", "experiments/settings.js",
+               "experiments/harness.js"]
 MAX_POST = 2 * 1024 * 1024
 LOOPBACK = {"127.0.0.1", "::1"}
 

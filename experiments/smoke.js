@@ -11,13 +11,14 @@ const { SETTINGS, PRESETS, PRESET_BY_ID, RANGES } = eng;
 const ids = ["c", "stats", "hint", "conductionRate", "conductionValue", "sizeResponse", "sizeValue", "archSize", "archValue", "buoyancy", "buoyancyValue", "scenarioPreset", "fillFraction", "fillValue", "countValue", "typicalRadius", "radiusValue", "massScale", "massValue", "viewToggle", "redeal",
 	"coldZoneEnd", "coldZoneValue", "hotZoneStart", "hotZoneValue", "coldPower", "coldPowerValue", "hotPower", "hotPowerValue",
 	"thermalLift", "liftValue", "bondStrength", "bondStrengthValue", "bondTempExp", "bondTempValue",
-	"waterFrac", "waterValue", "copySettings", "pasteSettings", "resetSettings", "settingsEcho"];
+	"waterFrac", "waterValue", "copySettings", "pasteSettings", "resetSettings", "settingsEcho",
+	"heatFeed", "heatFeedValue"];
 /* the markup's own values: the page must re-sync them from the engine on boot */
 const values = {
 	conductionRate: "1", sizeResponse: "0", archSize: "0", buoyancy: "1",
 	scenarioPreset: "custom", fillFraction: "50", typicalRadius: "14", massScale: "1",
 	coldZoneEnd: "40", hotZoneStart: "76", coldPower: "1", hotPower: "1",
-	thermalLift: "0", bondStrength: "0.72", bondTempExp: "2", waterFrac: "50",
+	thermalLift: "0", bondStrength: "0.72", bondTempExp: "2", waterFrac: "50", heatFeed: "0",
 };
 
 function makeSandbox(search, now) {
@@ -51,7 +52,7 @@ function slider(key) {
 		coldEnd: "coldZoneEnd", hotStart: "hotZoneStart", coldPower: "coldPower", hotPower: "hotPower",
 		conduction: "conductionRate", lift: "thermalLift", arch: "archSize", buoyancy: "buoyancy",
 		size: "sizeResponse", bonds: "bondStrength", bondTemp: "bondTempExp", water: "waterFrac",
-		fill: "fillFraction", radius: "typicalRadius", mass: "massScale",
+		fill: "fillFraction", radius: "typicalRadius", mass: "massScale", feed: "heatFeed",
 	}[key];
 }
 
@@ -64,7 +65,7 @@ function slider(key) {
 	/* the page starts from the engine's shipped scene, not from whatever the markup held */
 	for (const control of Object.keys(slider("coldEnd") ? {
 		coldEnd: 1, hotStart: 1, coldPower: 1, hotPower: 1, conduction: 1, lift: 1, arch: 1, buoyancy: 1,
-		size: 1, bonds: 1, bondTemp: 1, water: 1, fill: 1, radius: 1, mass: 1,
+		size: 1, bonds: 1, bondTemp: 1, water: 1, fill: 1, radius: 1, mass: 1, feed: 1,
 	} : {})) {
 		const input = elements[slider(control)];
 		const expected = SETTINGS[control] * (RANGES[control].percent ? 100 : 1);
@@ -78,6 +79,7 @@ function slider(key) {
 
 	/* moving a slider writes the world through the engine setter and marks the scene custom */
 	slide(elements, "conductionRate", 1.8);
+	slide(elements, "heatFeed", 0.6);
 	slide(elements, "coldPower", 1.5);
 	slide(elements, "hotPower", 0.5);
 	slide(elements, "coldZoneEnd", 55);
@@ -102,6 +104,7 @@ function slider(key) {
 	assert.equal(elements.bondTempValue.textContent, "2.8");
 	assert.equal(elements.waterValue.textContent, "38%");
 	assert.equal(elements.conductionValue.textContent, "1.80×");
+	assert.equal(elements.heatFeedValue.textContent, "0.60");
 	assert.equal(elements.buoyancyValue.textContent, "1.10×");
 	assert.equal(Number(elements.sizeResponse.value), 1);
 	assert.equal(Number(elements.archSize.value), -4);
@@ -165,6 +168,7 @@ function slider(key) {
 	assert.equal(copied.lift, 0.5, "copy reports the live thermal lift");
 	assert.equal(copied.bondTemp, 2.8, "copy reports the live bond exponent");
 	assert.equal(copied.conduction, 1.8, "copy reports the live conduction");
+	assert.equal(copied.feed, 0.6, "copy reports the live heat feed");
 	assert.equal(copied.size, 1, "copy reports the preset thermal size");
 	assert.equal(copied.arch, -4, "copy reports the preset arch coupling");
 	assert.equal(copied.view, "heat", "copy reports the view");
@@ -189,6 +193,7 @@ function slider(key) {
 	assert.equal(Number(elements.coldZoneEnd.value), SETTINGS.coldEnd * 100, "defaults restores the shipped cold band");
 	assert.equal(Number(elements.coldPower.value), SETTINGS.coldPower, "defaults restores the shipped cold power");
 	assert.equal(Number(elements.bondTempExp.value), SETTINGS.bondTemp, "defaults restores the shipped bond exponent");
+	assert.equal(Number(elements.heatFeed.value), SETTINGS.feed, "defaults restores the shipped heat feed");
 	assert.equal(Number(elements.waterFrac.value), SETTINGS.water * 100, "defaults restores the shipped water level");
 	assert.equal(elements.scenarioPreset.value, PRESETS[0].id, "defaults selects the shipped preset");
 	assert.match(elements.viewToggle.textContent, /temperature/, "defaults restores the shipped view");
@@ -223,7 +228,7 @@ function slider(key) {
 	assert.deepEqual(PRESET_BY_ID.sparseRaft.settings, {
 		fill: 0.21, radius: 14, water: 0.3, coldEnd: 0.56, hotStart: 0.78,
 		coldPower: 2.5, hotPower: 2.5, lift: 0.4, bonds: 0.72, bondTemp: 2,
-		conduction: 1, size: -0.35, arch: -2.5, buoyancy: 1, mass: 1, view: "density",
+		conduction: 1, feed: 0.15, size: -0.35, arch: -2.5, buoyancy: 1, mass: 1, view: "density",
 	}, "the old default scene is restored value for value");
 
 	console.log("browser bundle smoke: boot, render, five scene and six coupling presets, live controls,"

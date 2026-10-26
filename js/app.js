@@ -49,6 +49,7 @@ const CONTROLS = [
 	{ key: "coldPower", id: "coldPower", out: "coldPowerValue", text: timesValue(2) },
 	{ key: "hotPower", id: "hotPower", out: "hotPowerValue", text: timesValue(2) },
 	{ key: "conduction", id: "conductionRate", out: "conductionValue", text: timesValue(2) },
+	{ key: "feed", id: "heatFeed", out: "heatFeedValue", text: value => value.toFixed(2) },
 	{ key: "lift", id: "thermalLift", out: "liftValue", text: value => value.toFixed(2) },
 	{ key: "arch", id: "archSize", out: "archValue", text: signedValue },
 	{ key: "buoyancy", id: "buoyancy", out: "buoyancyValue", text: timesValue(2) },
