@@ -73,10 +73,6 @@ function syncPanel() {
 	updateCountLabel();
 }
 
-function describeSettings(settings) {
-	return JSON.stringify(settings);
-}
-
 function setEcho(text, tone) {
 	const echo = $("settingsEcho");
 	echo.textContent = text;
@@ -91,13 +87,14 @@ function applyAndDeal(settings) {
 	assets.tempSprites = temperatureSprites;
 	syncPanel();
 	const note = ignored.length ? " · ignored " + ignored.join(",") : "";
-	setEcho("applied " + describeSettings(readSettings(world)) + note, ignored.length ? "bad" : "ok");
-	console.log("settings " + describeSettings(readSettings(world)) + note);
+	const line = JSON.stringify(readSettings(world));
+	setEcho("applied " + line + note, ignored.length ? "bad" : "ok");
+	console.log("settings " + line + note);
 	return ignored;
 }
 
 function copySettings() {
-	const text = describeSettings(readSettings(world));
+	const text = JSON.stringify(readSettings(world));
 	const button = $("copySettings");
 	const done = () => {
 		button.textContent = "Copied ✓";
