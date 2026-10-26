@@ -121,7 +121,9 @@ function printRow(label, candidate, rate, result) {
 }
 function num(value, digits) { return value.toFixed(digits); }
 
-console.log("thermal zone sweep · " + W + "x" + H + " · " + FRAMES + " frames · source 1x · conduction 1x · seeded");
+const probe = eng.createWorld(W, H);
+console.log("thermal zone sweep · " + W + "x" + H + " · " + FRAMES + " frames · shipped scene · source "
+	+ probe.sourceRate + "x · conduction " + probe.conductionRate + "x · seeded");
 console.log(pad("candidate", 20) + pad("links avg/max", 15) + pad("cold", 7) + pad("coldBonds", 11)
 	+ pad("churn", 7) + pad("Tmin/mean/max", 18) + pad("top/bottom", 13)
 	+ pad("stir", 7) + pad("recover", 9) + pad("maxV", 6) + "ms/frame");
@@ -129,9 +131,9 @@ for (const candidate of CANDIDATES) printRow(candidate.name, candidate, undefine
 console.log("cold = beads able to bond (T<" + BOND_HEAT + ") · coldBonds = links whose pair mean T<" + COLD_TEMP
 	+ " · churn = mean |Δlinks| per 30-frame sample · stir = links 0.5 s after a splash");
 
-console.log("\nsource rate at the shipped cold " + CHOSEN.coldEnd + " / hot " + CHOSEN.hotStart + " (the slider's range)");
+console.log("\nsource rate at the shipped bands (cold " + CHOSEN.coldEnd + " / hot " + CHOSEN.hotStart + ", both offsets scaled)");
 console.log(pad("candidate", 20) + pad("links avg/max", 15) + pad("cold", 7) + pad("coldBonds", 11)
 	+ pad("churn", 7) + pad("Tmin/mean/max", 18) + pad("top/bottom", 13)
 	+ pad("stir", 7) + pad("recover", 9) + pad("maxV", 6) + "ms/frame");
-for (const rate of SOURCE_RATES) printRow("rate " + rate + "x", CHOSEN, rate, run(CHOSEN, rate));
+for (const rate of SOURCE_RATES) printRow("rate " + rate + "x", CHOSEN, undefined, run(CHOSEN, rate));
 console.log("rate 0x must leave the bed neutral (no bonds): the source is the only way a bead leaves T=0.5");

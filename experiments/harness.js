@@ -59,7 +59,11 @@ function captureConsole() {
 }
 
 const captured = captureConsole();
-const QUERY = "?run=0&version=0.3.2";		// the runner appends the same version it puts in the log name
+/* budget=60: this file validates wiring, never timings -- vm.runInContext leaves V8
+   unable to optimize the engine, so the measured frames run about ten times slower
+   than in a browser (see findings-pitfalls-skills.md, "tooling") */
+const BUDGET = 60;
+const QUERY = "?run=0&version=0.3.2&budget=" + BUDGET;		// the runner appends the same version it puts in the log name
 const sandboxHost = createSandbox({
 	ids: [...markupIds],
 	canvasIds: ["c"],
@@ -115,13 +119,17 @@ function waitFor(predicate, label, timeoutMs) {
 	const quick = harness.perfCases("quick");
 	const full = harness.perfCases("full");
 	assert.equal(quick.map(item => item.id).join(","), "shipped,default dpr1,default dpr2", "quick matrix");
-	assert.equal(full.length, 12, "full matrix is the shipped scene, 3 sizes x 3 variants and 2 interaction cases");
+	assert.equal(full.length, 13, "full matrix is the shipped scene, 3 sizes x 3 variants and 3 extra cases");
 	assert.equal(quick[0].id, "shipped", "the quick run starts by measuring the shipped scene");
 	assert.ok(full.some(item => item.id === "shipped" && item.settings && item.settings.fill > 0),
 		"the matrix measures the scene the app opens with");
 	assert.ok(full.some(item => item.id === "cap dpr1-temp"), "full matrix carries the temperature view at the cap");
 	assert.ok(full.some(item => item.id === "cold-links") && full.some(item => item.id === "stirred-cap"),
 		"full matrix carries the preset and stirred cases");
+	assert.ok(full.some(item => item.id === "heat cap" && item.view === "heat"),
+		"full matrix measures the heat-map view at the cap");
+	assert.equal(full.filter(item => item.view === "temp").length, 4,
+		"the shipped case and the three temperature variants draw the temperature view");
 
 	const rows = await harness.runPerf([quick[0]], { warm: 1, measure: 5 });
 	assert.equal(rows.length, 1, "one perf row");
@@ -135,7 +143,7 @@ function waitFor(predicate, label, timeoutMs) {
 
 	const passing = harness.summarise(checks, rows);
 	assert.ok(passing.ok, "summary passes when every check and case is inside budget");
-	assert.match(passing.line, /^RESULT pass · checks 8\/8 · perf 1\/1 within 16\.7 ms/);
+	assert.match(passing.line, new RegExp("^RESULT pass · checks 8/8 · perf 1/1 within " + BUDGET + " ms"));
 	const failing = harness.summarise(checks.map((check, index) => (index === 0 ? { id: check.id, ok: false } : check)), rows);
 	assert.equal(failing.ok, false, "summary fails when a check fails");
 	assert.match(failing.line, /^RESULT fail/);
@@ -161,7 +169,7 @@ function waitFor(predicate, label, timeoutMs) {
 	assert.match(posted[0].body, /browser tests 0\.3\.2 · \d{4}-\d\d-\d\d/, "the posted log names its version and date");
 	assert.match(posted[0].body, /check boot ok · /);
 	assert.match(posted[0].body, /perf default dpr1 · n=\d+/);
-	assert.match(posted[0].body, /RESULT pass · checks 8\/8 · perf 3\/3 within 16\.7 ms/);
+	assert.match(posted[0].body, new RegExp("RESULT pass · checks 8/8 · perf 3/3 within " + BUDGET + " ms"));
 	assert.match(sandboxHost.elements.status.textContent, /^PASS · checks 8\/8/, "status line carries the verdict");
 	assert.match(sandboxHost.elements.out.textContent, /RESULT pass/, "the page's log element holds the report");
 

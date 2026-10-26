@@ -110,7 +110,7 @@ eng.substep(arch, eng.SUBSTEP);
 assert.ok(arch.vy[1] > 8 && Number.isFinite(arch.vy[1]), "minimum coupling gives strong but bounded sinking");
 assert.equal(arch.archSize, -10, "negative archimedes-size range reaches -10");
 eng.setArchSize(arch, 20);
-assert.equal(arch.archSize, 2, "archimedes-size coupling clamps to the rescaled +2 control maximum");
+assert.equal(arch.archSize, 10, "archimedes-size coupling clamps to +10");
 eng.setArchSize(arch, -20);
 assert.equal(arch.archSize, -10, "archimedes-size coupling clamps to -10");
 eng.setBuoyancy(arch, -1);

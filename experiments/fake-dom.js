@@ -9,6 +9,8 @@ function fakeContext() {
 	const target = {
 		createLinearGradient() { return { addColorStop() {} }; },
 		createRadialGradient() { return { addColorStop() {} }; },
+		/* enough of a 2D context for the heat-map pixels the renderer uploads */
+		createImageData(width, height) { return { width, height, data: new Uint8ClampedArray(width * height * 4) }; },
 		canvas: null,
 	};
 	return new Proxy(target, {

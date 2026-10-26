@@ -40,6 +40,12 @@
 
 ## browser harness
 
+- a frame-budget verdict belongs to the browser. The sandbox runs the page through
+  `vm.runInContext`, which leaves V8 unable to optimize it, so the same scene costs
+  ~10x; a hard-coded 16.7 ms assertion in a node check flakes the moment the renderer
+  grows. Give the page a `?budget=` override and let the node harness pass a number
+  it can actually hold while the human run keeps 16.7.
+
 - serve the harness instead of using `file://`: with `Cross-Origin-Opener-Policy:
   same-origin` and `Cross-Origin-Embedder-Policy: require-corp`, the page is
   cross-origin isolated and `performance.now()` steps at ~5 us; without it the
@@ -94,6 +100,13 @@
 - the sim engine stays DOM-free and guarded by `module.exports`, so
   experiments/ can require it directly — bench and sanity checks run in
   milliseconds without a browser.
+- a fake DOM that boots the renderer needs `createImageData` (and a plain
+  `Uint8ClampedArray` behind it) as soon as anything uploads pixels; returning
+  `undefined` from a proxy stand-in fails late, inside the draw call.
+- when a fake slider fires `input`, set `element.value` first: a handler that
+  closes over its element reads the element, while a real browser has already
+  moved it. Firing with only an event target silently tests a stale value
+  (`Number("")` → NaN → the slider snaps to `min`).
 
 ## thermal tuning
 
@@ -109,6 +122,17 @@
 - sweep geometry against a seeded bed and report frame cost next to the look. Here
   every band from 0.36 to 0.48 costs 0.78-0.87 ms/frame, so the choice was purely
   visual and could be made without a budget argument.
+- a solved *target* field with a neutral middle is a thermostat, not a source: if
+  every bead relaxes toward the field, the clear gap between the bands pulls the bed
+  back to 0.5 as fast as the cold band chills it (temperature at 300 px sat at 0.48,
+  19 of 648 beads cold, 9 links). Weight the relaxation rate by the field's distance
+  from neutral and the gap does nothing, leaving conduction in charge - the same scene
+  then reads 133 cold beads and 19 links, matching the pre-heat-map build. A wash
+  drawn with alpha proportional to `|target - 0.5|` is already the honest picture of
+  that model.
+- band edges are the worst step in a solved field (0.2 of the range at a 0.6 cold
+  band with a 0.5 gap); a smoothness assertion has to allow one band edge per
+  sweep, not demand a flat grid.
 
 ## scene balance
 

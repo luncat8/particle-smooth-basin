@@ -1,0 +1,78 @@
+hydrogel basin tests 0.4.2 · 2026-10-26 06:07 · node 22.22.3 · linux x86_64
+
+> node experiments/smoke.js
+settings {"fill":0.4,"radius":14,"water":0.3,"coldEnd":0.3,"hotStart":0.75,"coldPower":0.7,"hotPower":2,"lift":0.3,"bonds":0.4,"bondTemp":2.5,"conduction":0.25,"size":-1,"arch":-10,"buoyancy":0.2,"mass":1,"view":"temp"}
+settings {"fill":0.4,"radius":14,"water":0.3,"coldEnd":0.3,"hotStart":0.75,"coldPower":0.7,"hotPower":2,"lift":0.3,"bonds":0.4,"bondTemp":2.5,"conduction":0.25,"size":-1,"arch":-10,"buoyancy":0.2,"mass":1,"view":"temp"}
+PROFILE 300F · FRAME p50 2.50 p95 2.50 · SIM p50 1.25 p95 1.25 · RENDER p50 1.25 p95 1.25 MS
+settings {"fill":0.4,"radius":14,"water":0.38,"coldEnd":0.62,"hotStart":0.75,"coldPower":1.5,"hotPower":0.5,"lift":0.5,"bonds":0.4,"bondTemp":2.8,"conduction":1.8,"size":1,"arch":-4,"buoyancy":1.1,"mass":1,"view":"heat"}
+settings {"fill":0.3,"radius":14,"water":0.38,"coldEnd":0.7,"hotStart":0.75,"coldPower":1.5,"hotPower":0.5,"lift":0.6,"bonds":0.4,"bondTemp":4,"conduction":1.8,"size":0.5,"arch":3,"buoyancy":1.1,"mass":1,"view":"density"} · ignored foreign
+settings {"fill":0.4,"radius":14,"water":0.3,"coldEnd":0.3,"hotStart":0.75,"coldPower":0.7,"hotPower":2,"lift":0.3,"bonds":0.4,"bondTemp":2.5,"conduction":0.25,"size":-1,"arch":-10,"buoyancy":0.2,"mass":1,"view":"temp"}
+settings {"fill":0.4,"radius":14,"water":0.3,"coldEnd":0.3,"hotStart":0.75,"coldPower":0.7,"hotPower":2,"lift":0.3,"bonds":0.4,"bondTemp":2.5,"conduction":0.25,"size":-1,"arch":-10,"buoyancy":0.2,"mass":1,"view":"temp"}
+settings {"fill":0.3,"radius":14,"water":0.3,"coldEnd":0.3,"hotStart":0.75,"coldPower":1,"hotPower":2,"lift":0.8,"bonds":0.4,"bondTemp":2.5,"conduction":0.1,"size":-1,"arch":-4,"buoyancy":0.55,"mass":1,"view":"temp"}
+settings {"fill":0.4,"radius":14,"water":0.3,"coldEnd":0.4,"hotStart":0.75,"coldPower":1,"hotPower":2,"lift":0.5,"bonds":0.5,"bondTemp":2,"conduction":1,"size":1,"arch":2,"buoyancy":0.85,"mass":1,"view":"temp"}
+settings {"fill":0.56,"radius":14,"water":0.3,"coldEnd":0.4,"hotStart":0.75,"coldPower":1,"hotPower":2,"lift":0.7,"bonds":0.9,"bondTemp":1.5,"conduction":1.9,"size":-1,"arch":-5,"buoyancy":0.3,"mass":1,"view":"temp"}
+settings {"fill":0.21,"radius":14,"water":0.3,"coldEnd":0.56,"hotStart":0.78,"coldPower":2.5,"hotPower":2.5,"lift":0.4,"bonds":0.72,"bondTemp":2,"conduction":1,"size":-0.35,"arch":-2.5,"buoyancy":1,"mass":1,"view":"density"}
+settings {"fill":0.21,"radius":14,"water":0.3,"coldEnd":0.56,"hotStart":0.78,"coldPower":2.5,"hotPower":2.5,"lift":0.4,"bonds":0.72,"bondTemp":2,"conduction":1,"size":-1,"arch":0,"buoyancy":1,"mass":1,"view":"density"}
+settings {"fill":0.21,"radius":14,"water":0.3,"coldEnd":0.56,"hotStart":0.78,"coldPower":2.5,"hotPower":2.5,"lift":0.4,"bonds":0.72,"bondTemp":2,"conduction":1,"size":0,"arch":4,"buoyancy":1,"mass":1,"view":"density"}
+settings {"fill":0.21,"radius":14,"water":0.3,"coldEnd":0.56,"hotStart":0.78,"coldPower":2.5,"hotPower":2.5,"lift":0.4,"bonds":0.72,"bondTemp":2,"conduction":1,"size":-1,"arch":-4,"buoyancy":1,"mass":1,"view":"density"}
+settings {"fill":0.21,"radius":14,"water":0.3,"coldEnd":0.56,"hotStart":0.78,"coldPower":2.5,"hotPower":2.5,"lift":0.4,"bonds":0.72,"bondTemp":2,"conduction":1,"size":1,"arch":4,"buoyancy":1,"mass":1,"view":"density"}
+settings {"fill":0.21,"radius":14,"water":0.3,"coldEnd":0.56,"hotStart":0.78,"coldPower":2.5,"hotPower":2.5,"lift":0.4,"bonds":0.72,"bondTemp":2,"conduction":1,"size":-1,"arch":4,"buoyancy":1,"mass":1,"view":"density"}
+settings {"fill":0.21,"radius":14,"water":0.3,"coldEnd":0.56,"hotStart":0.78,"coldPower":2.5,"hotPower":2.5,"lift":0.4,"bonds":0.72,"bondTemp":2,"conduction":1,"size":1,"arch":-4,"buoyancy":1,"mass":1,"view":"density"}
+browser bundle smoke: boot, render, five scene and six coupling presets, live controls, band drag, DPR change, pointer cancel, clipboard settings paste/copy/reset and ?profile=1 passed
+  ok · 2.4 s
+
+> node experiments/thermal.js
+thermal checks: rates, sizing, buoyancy, size coupling, thawing links, pointer, wave steps and coverage passed
+  ok · 0.1 s
+
+> node experiments/bench.js
+0.2.3 review bench  node=v22.22.3  1280x800  seeded
+n=648  rBar=14.0
+throughput: 0.93 ms/frame (1080 fps headroom) at 3600 frames / 60 s sim
+after settle: NaN=0  max|v|=15  mean|v|=0.1
+distribution: above line=2  fully submerged=619  mean sub. frac=0.98
+pairs: max per substep=1665  (buffer cap=12000)
+links: max effective=55  max cold=1219  (buffer cap=12000)
+submergedFrac: f(0)=0.5 f(full)=1 f(none)=0 f(q=-.5)=0.1955  ok=true
+after splash: NaN=0  max|v|=345
+arch-size stress (a=10, size=-1, buoyancy=1.5): NaN=0  max|v|=203
+profile near-cap: n=1500  2.39 ms/frame  peak pairs=3890  peak links=184 / 12000
+equilibrium: dens=0.5 -> frac=0.500 (want ~0.500)   dens=2.0 -> frac=1.000 (want 1.000, on floor)
+  ok · 5.4 s
+
+> node experiments/thermal-zone.js
+thermal zone sweep · 1280x800 · 480 frames · shipped scene · source 1x · conduction 0.25x · seeded
+candidate           links avg/max  cold   coldBonds  churn  Tmin/mean/max     top/bottom   stir   recover  maxV  ms/frame
+old 0.24            1/2            82     0          0.2    0.38/0.58/0.87    0.45/0.68    2      9        24    1.13
+cold 0.36           153/158        187    0          2.1    0.32/0.56/0.87    0.00/0.67    143    158      35    1.05
+shipped             23/24          136    0          0.9    0.35/0.58/0.88    0.39/0.68    24     61       86    1.01
+cold 0.44           333/341        244    2          4.7    0.26/0.55/0.87    0.00/0.67    336    345      1     1.05
+cold 0.48           412/419        271    31         3.9    0.20/0.54/0.87    0.00/0.67    414    420      31    1.07
+cold 0.44 hot 0.70  346/355        245    0          3.8    0.37/0.59/0.91    0.00/0.74    338    344      23    1.02
+cold 0.40 hot 0.70  247/251        214    0          2.1    0.27/0.60/0.91    0.00/0.74    237    234      37    1.07
+cold 0.44 hot 0.82  328/341        247    9          4.5    0.22/0.51/0.80    0.00/0.60    339    348      4     1.12
+cold = beads able to bond (T<0.483) · coldBonds = links whose pair mean T<0.3 · churn = mean |Δlinks| per 30-frame sample · stir = links 0.5 s after a splash
+
+source rate at the shipped bands (cold 0.3 / hot 0.75, both offsets scaled)
+candidate           links avg/max  cold   coldBonds  churn  Tmin/mean/max     top/bottom   stir   recover  maxV  ms/frame
+rate 0x             0/0            0      0          0.0    0.50/0.50/0.50    0.50/0.50    0      0        39    1.04
+rate 0.5x           3/6            99     0          0.3    0.36/0.57/0.88    0.42/0.67    8      29       85    1.00
+rate 1x             29/39          132    0          1.5    0.34/0.58/0.88    0.41/0.68    23     56       438   1.03
+rate 2x             193/200        153    0          1.8    0.36/0.57/0.88    0.00/0.69    197    194      14    1.02
+rate 4x             294/297        173    19         1.7    0.28/0.56/0.88    0.00/0.69    298    302      10    1.08
+rate 0x must leave the bed neutral (no bonds): the source is the only way a bead leaves T=0.5
+  ok · 11.0 s
+
+> node experiments/settings.js
+settings checks: round trip, partial paste, unknown keys, clamping, live fields, view mode, presets, heat map geometry and 10 s stability passed
+  ok · 0.8 s
+
+> node experiments/harness.js
+checks: boot=ok · canvas=ok · invariants=ok · interaction=ok · resize=ok · thermal=ok · thermal-zone=ok · profile=ok
+harness lint: tests.html script compiles, 13 element ids, 13 referenced ids present, 8 checks and 1 perf case ran in the sandbox
+sandbox page path: quick run in 11.2 s · saved once · second Save posts nothing · duplicate response accepted as saved
+checks: boot=ok canvas=ok invariants=ok interaction=ok resize=ok thermal=ok thermal-zone=ok profile=ok
+thermal zone: cold 134/648 · 16 bonds · top 0.38 bottom 0.69 · 5 above water · bed top 252 px
+perf row: shipped n=648 frames=5 frame p50 10.73 p95 23.97 · sim p95 23.43 · render p95 0.59
+not validated here: canvas pixels and real frame times — open tests.html for those
+  ok · 22.0 s

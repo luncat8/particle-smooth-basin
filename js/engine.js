@@ -15,8 +15,6 @@ const SIZE_FACTOR_MAX = 1.28;	// upper bound on bead r/rBar; pair-grid cell size
 const SPAWN_CAP = 1500;
 const RHO_WATER = 1;
 const ARCH_LIFT_LIMIT = 8;
-const ARCH_SIZE_MIN = -10;
-const ARCH_SIZE_MAX = 2;
 const DRAG_AIR = 0.05;		// 1/s
 const DRAG_WATER = 2.7;		// 1/s, scaled by submerged fraction^2
 const SUBSTEP = 1 / 120;
@@ -41,8 +39,31 @@ const WAVE_REACT = 22;		// px/s per ripple kick unit: reaction impulse on the be
 const COLD_ZONE_END = 0.30;	// share of H cooled from the top, and drawn as the cold gradient
 const HOT_ZONE_START = 0.75;	// share of H where the heated bottom band starts
 const PAL_LIGHT = 6;		// sprite palette: 0..5 light beads, 6..11 deep
+const HEAT_GRID = 48;		// cells along the longer side of the window heat map
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+
+/* Every settable number with the range the UI and the paste path share: `min`/`max`
+   clamp the world, `ui` is the slider span (narrower where the last decade of a
+   control was never used), `step` its granularity, `group` where the control sits.
+   zone = the bands, rate = how fast heat moves, shape = the scene, force = buoyancy. */
+const RANGES = {
+	coldEnd: { field: "coldZoneEnd", min: 0.05, max: 0.95, ui: [10, 90], step: 0.01, percent: true, group: "zone", label: "Cold band end" },
+	hotStart: { field: "hotZoneStart", min: 0.05, max: 0.95, ui: [10, 90], step: 0.01, percent: true, group: "zone", label: "Hot band start" },
+	coldPower: { field: "coldPower", min: 0, max: 4, ui: [0, 4], step: 0.05, group: "rate", label: "Cold speed" },
+	hotPower: { field: "hotPower", min: 0, max: 4, ui: [0, 3.5], step: 0.05, group: "rate", label: "Hot speed" },
+	conduction: { field: "conductionRate", min: 0, max: 4, ui: [0, 2], step: 0.05, group: "rate", label: "Conduction" },
+	lift: { field: "thermalLift", min: 0, max: 1, ui: [0.1, 0.9], step: 0.01, group: "force", label: "Heat lifts" },
+	arch: { field: "archSize", min: -10, max: 10, ui: [-10, 10], step: 0.1, group: "force", label: "Archimedes vs size" },
+	buoyancy: { field: "buoyancy", min: 0, max: 2, ui: [0, 1.2], step: 0.05, group: "force", label: "Buoyancy strength" },
+	size: { field: "sizeResponse", min: -1, max: 1, ui: [-1, 1], step: 0.05, group: "shape", label: "Thermal size" },
+	bonds: { field: "linkStrength", min: 0.2, max: 1, ui: [0.2, 1], step: 0.01, group: "shape", label: "Bond strength" },
+	bondTemp: { field: "linkTempExp", min: 0.5, max: 6, ui: [1, 3], step: 0.1, group: "shape", label: "Bond vs temperature" },
+	fill: { field: "fillFraction", min: 0.05, max: 0.7, ui: [5, 70], step: 0.01, percent: true, group: "shape", label: "Canvas coverage" },
+	radius: { field: "typicalRadius", min: 8, max: 22, ui: [8, 22], step: 1, int: true, group: "shape", label: "Typical radius" },
+	water: { field: "waterFrac", min: 0.10, max: 0.90, ui: [20, 45], step: 0.005, percent: true, group: "shape", label: "Water level" },
+	mass: { field: "massScale", min: 0.4, max: 2.5, ui: [0.4, 2.5], step: 0.05, group: "shape", label: "Average mass" },
+};
 
 /* ------------------------- world ------------------------- */
 
@@ -59,7 +80,8 @@ function createWorld(W, H) {
 		coldZoneEnd: COLD_ZONE_END, hotZoneStart: HOT_ZONE_START,
 		coldPower: COLD_POWER, hotPower: HOT_POWER,
 		linkStrength: LINK_STRENGTH, linkTempExp: LINK_TEMP_EXP, linkHeatMax: LINK_HEAT_MAX,
-		temperatureView: true,
+		view: "temp",
+
 		n: 0, cap,
 		x: new Float64Array(cap), y: new Float64Array(cap),
 		px: new Float64Array(cap), py: new Float64Array(cap),
@@ -78,8 +100,9 @@ function createWorld(W, H) {
 		linkRest: new Float32Array(cap * 8), linkK: new Float32Array(cap * 8), linkN: 0, linkActiveN: 0,
 		linkHashKeys: null, linkHashRest: null, linkHashMask: 0,
 		linkPrevKeys: null, linkPrevRest: null,
-		pointer: { x: 0, y: 0, px: 0, py: 0, vx: 0, vy: 0, down: false, grab: -1, moved: 0, downT: 0 },
+		pointer: { x: 0, y: 0, px: 0, py: 0, vx: 0, vy: 0, down: false, grab: -1, zone: "", moved: 0, downT: 0 },
 		acc: 0, waveTick: 0,
+		heat: { gx: 0, gy: 0, cw: 1, ch: 1, field: null, dirty: true, version: 0 },
 	};
 	initLinkHash(world);
 	resizeWorld(world, W, H);
@@ -96,7 +119,107 @@ function resizeWorld(world, W, H) {
 	world.waterY = H * world.waterFrac;
 	world.grav = 1850 * clamp(H / 950, 0.75, 1.25);
 	initWave(world);
+	initHeatMap(world);
 	if (world.n > 0) spawnBed(world);
+}
+
+/* ------------------------- heat map -------------------------
+   The room has one temperature field on a coarse grid, and every bead reads it where
+   it is. The target profile is the two bands the sliders place: cold from the top of
+   the window down to `coldZoneEnd`, hot from `hotZoneStart` to the floor, neutral
+   between them and neutral outside the tank. The field is the smooth (diffused)
+   version of that profile: it is what the renderer paints in the background and what
+   the solver relaxes beads toward, so the picture, the physics and the heat-map view
+   can never disagree. Solving is a Gauss-Seidel relaxation, warm-started from the
+   previous field, and it runs once per frame at most (only when the bands move). */
+
+const HEAT_PULL = 3;		// how hard a cell holds its band target vs its neighbours
+const HEAT_MARGIN_CELLS = 2;	// the glass fades the band out over this many cells
+const HEAT_SWEEPS = 240;	// upper bound per solve; warm starts stop much earlier
+const HEAT_TOLERANCE = 5e-4;
+
+function initHeatMap(world) {
+	const h = world.heat;
+	h.gx = HEAT_GRID;
+	h.gy = Math.max(6, Math.round(HEAT_GRID * (world.H || world.W) / (world.W || 1)));
+	h.cw = world.W / h.gx;
+	h.ch = world.H / h.gy;
+	const cells = h.gx * h.gy;
+	if (!h.field || h.field.length !== cells) h.field = new Float32Array(cells).fill(0.5);
+	h.version++;
+	h.dirty = true;
+}
+
+/* The bands themselves: a share of the window's height, the same numbers the sliders
+   name and the old 1-D source used. */
+function bandTarget(world, y) {
+	const coldEnd = world.H * world.coldZoneEnd;
+	if (y < coldEnd) return 0.02 + 0.18 * clamp(y / coldEnd, 0, 1);
+	const hotStart = world.H * world.hotZoneStart;
+	if (y <= hotStart) return 0.5;
+	/* the hot band fades in from the neutral gap like the old rate weighting did
+	   (u²(3-2u)), so the field has no hard stripe at the band's upper edge */
+	const u = clamp((y - hotStart) / Math.max(1, world.H - hotStart), 0, 1);
+	return 0.5 + 0.5 * u * u * (3 - 2 * u);
+}
+
+/* What a cell is pulled toward: the band profile inside the tank, fading to the room's
+   neutral 0.5 through the glass, so the tank is a body sitting in a neutral room and
+   the map has soft edges instead of cut-off bands. */
+function heatTarget(world, x, y) {
+	const t = world.tank, band = bandTarget(world, y);
+	const inside = Math.min(x - t.x0, t.x1 - x);	// the open top and the floor keep the band
+	if (inside >= 0) return band;
+	const margin = HEAT_MARGIN_CELLS * world.heat.cw;
+	if (inside <= -margin) return 0.5;
+	return band + (0.5 - band) * (-inside / margin);
+}
+
+/* Gauss-Seidel: phi = (neighbours + pull*target) / (1 + pull), mirrored at the window
+   edges. Stops when no cell moved more than the tolerance (a warm start converges in
+   a few sweeps, a cold one needs the whole budget). */
+function solveHeatMap(world) {
+	const h = world.heat;
+	if (!h.dirty) return 0;
+	const gx = h.gx, gy = h.gy, field = h.field, cw = h.cw, ch = h.ch;
+	const lastX = gx - 1, lastY = gy - 1;
+	const pull = HEAT_PULL;
+	let sweeps = 0, change = 1;
+	while (sweeps < HEAT_SWEEPS && change > HEAT_TOLERANCE) {
+		change = 0;
+		for (let cy = 0; cy < gy; cy++) {
+			const up = cy > 0 ? -gx : 0, down = cy < lastY ? gx : 0;
+			const ty = (cy + 0.5) * ch;
+			for (let cx = 0; cx < gx; cx++) {
+				const i = cy * gx + cx;
+				const target = heatTarget(world, (cx + 0.5) * cw, ty);
+				const left = cx > 0 ? field[i - 1] : field[i];
+				const right = cx < lastX ? field[i + 1] : field[i];
+				const next = (left + right + field[i + up] + field[i + down] + pull * target) / (4 + pull);
+				const delta = next > field[i] ? next - field[i] : field[i] - next;
+				if (delta > change) change = delta;
+				field[i] = next;
+			}
+		}
+		sweeps++;
+	}
+	h.dirty = false;
+	h.version++;
+	return sweeps;
+}
+
+/* bilinear read of the field at a world position; outside the grid clamps to the edge */
+function heatAt(world, x, y) {
+	const h = world.heat, field = h.field;
+	let fx = x / h.cw - 0.5, fy = y / h.ch - 0.5;
+	fx = clamp(fx, 0, h.gx - 1);
+	fy = clamp(fy, 0, h.gy - 1);
+	const x0 = fx | 0, y0 = fy | 0;
+	const x1 = x0 < h.gx - 1 ? x0 + 1 : x0, y1 = y0 < h.gy - 1 ? y0 + 1 : y0;
+	const tx = fx - x0, ty = fy - y0;
+	const top = field[y0 * h.gx + x0] * (1 - tx) + field[y0 * h.gx + x1] * tx;
+	const bottom = field[y1 * h.gx + x0] * (1 - tx) + field[y1 * h.gx + x1] * tx;
+	return top * (1 - ty) + bottom * ty;
 }
 
 /* ------------------------- wave field -------------------------
@@ -244,75 +367,91 @@ function syncRMax(world) {
 	world.rMax = world.rBar * SIZE_FACTOR_MAX * Math.pow(2, Math.abs(world.sizeResponse) * 0.5);
 }
 
+/* Setters clamp through the one RANGES table, so a slider, a paste and the keyboard
+   nudger can never disagree about what a value means. */
+function clampSetting(key, value) {
+	const range = RANGES[key];
+	return range ? clamp(value, range.min, range.max) : value;
+}
+
 function setSourceRate(world, value) {
 	world.sourceRate = clamp(value, 0, 4);
 }
 
 function setConductionRate(world, value) {
-	world.conductionRate = clamp(value, 0, 4);
+	world.conductionRate = clampSetting("conduction", value);
 }
 
 function setSizeResponse(world, value) {
-	world.sizeResponse = clamp(value, -1, 1);
+	world.sizeResponse = clampSetting("size", value);
 	syncRMax(world);
 	refreshThermalSizes(world);
 }
 
 function setArchSize(world, value) {
-	world.archSize = clamp(value, ARCH_SIZE_MIN, ARCH_SIZE_MAX);
+	world.archSize = clampSetting("arch", value);
 }
 
+/* the cold band always ends at least ZONE_GAP above where the hot band starts */
+const ZONE_GAP = 0.05;
+
 function setColdZoneEnd(world, value) {
-	world.coldZoneEnd = clamp(value, 0.10, 0.80);
+	world.coldZoneEnd = Math.min(clampSetting("coldEnd", value), world.hotZoneStart - ZONE_GAP);
+	world.heat.dirty = true;
 }
 
 function setHotZoneStart(world, value) {
-	world.hotZoneStart = clamp(value, 0.40, 0.95);
+	world.hotZoneStart = Math.max(clampSetting("hotStart", value), world.coldZoneEnd + ZONE_GAP);
+	world.heat.dirty = true;
 }
 
 function setColdPower(world, value) {
-	world.coldPower = clamp(value, 0, 4);
+	world.coldPower = clampSetting("coldPower", value);
 }
 
 function setHotPower(world, value) {
-	world.hotPower = clamp(value, 0, 4);
+	world.hotPower = clampSetting("hotPower", value);
 }
 
 function setBondStrength(world, value) {
-	world.linkStrength = clamp(value, 0.2, 1);
+	world.linkStrength = clampSetting("bonds", value);
 }
 
 function setBondTempExp(world, value) {
-	world.linkTempExp = clamp(value, 0.5, 6);
+	world.linkTempExp = clampSetting("bondTemp", value);
 }
 
 function setWaterFrac(world, value) {
-	world.waterFrac = clamp(value, 0.25, 0.75);
+	world.waterFrac = clampSetting("water", value);
 	world.waterY = world.H * world.waterFrac;
 }
 
 function setBuoyancy(world, value) {
-	world.buoyancy = clamp(value, 0, 2);
+	world.buoyancy = clampSetting("buoyancy", value);
 }
 
 function setThermalLift(world, value) {
-	world.thermalLift = clamp(value, 0, 1);
+	world.thermalLift = clampSetting("lift", value);
 }
 
 function setTypicalRadius(world, value) {
-	world.typicalRadius = clamp(value, 8, 22);
+	world.typicalRadius = clampSetting("radius", value);
 	world.rBar = world.typicalRadius;
 	syncRMax(world);
 	refreshThermalSizes(world);
 }
 
 function setFillFraction(world, value) {
-	world.fillFraction = clamp(value, 0.08, 0.7);
+	world.fillFraction = clampSetting("fill", value);
 }
 
 function setMassScale(world, value) {
-	world.massScale = clamp(value, 0.4, 2.5);
+	world.massScale = clampSetting("mass", value);
 	refreshThermalSizes(world);
+}
+
+function setView(world, value) {
+	world.view = value === "density" || value === "heat" ? value : "temp";
 }
 
 function addBead(world, x, y) {
@@ -517,20 +656,25 @@ function exchangeHeat(world, h) {
 	const hotRate = sourceRate * world.hotPower;
 	if (coldRate <= 0 && hotRate <= 0 && conductionRate <= 0) return;
 	const temp = world.temp, delta = world.heatDelta;
-	const topEnd = world.H * world.coldZoneEnd;
-	const bottomStart = world.H * world.hotZoneStart;
-	for (let i = 0; i < world.n; i++) {
-		const py = world.y[i];
-		/* The cold weight stays usable at the band's lower edge (0.4, not 0): a band that
-		   fades to nothing above the bed never cools its top layer fast enough to bond. */
-		if (coldRate > 0 && py < topEnd) {
-			const u = clamp(py / topEnd, 0, 1);
-			temp[i] += (0.02 + 0.18 * u - temp[i]) * (1 - Math.exp(-coldRate * (1 - 0.6 * u) * h));
-		} else if (hotRate > 0 && py > bottomStart) {
-			const u = clamp((py - bottomStart) / (world.H - bottomStart), 0, 1);
-			temp[i] += (1 - temp[i]) * (1 - Math.exp(-hotRate * u * u * (3 - 2 * u) * h));
+	/* A bead relaxes toward the heat map where it sits, but only as far as the map is
+	   off neutral: the cold band chills the top of the tank, the hot band warms the
+	   floor, and the clear middle of the map leaves a bead to its neighbours. Weighting
+	   the rate by the map's distance from 0.5 is what keeps the gap from acting as a
+	   thermostat, which would re-warm the bed as fast as the cold band cooled it.
+	   Which speed applies follows the map, not the bead's own temperature, so a hot
+	   bead rising into the cold band is chilled at the cold speed like any other. */
+	if (coldRate > 0 || hotRate > 0) {
+		for (let i = 0; i < world.n; i++) {
+			const ambient = heatAt(world, world.x[i], world.y[i]);
+			const reach = Math.min(1, Math.abs(ambient - 0.5) * 2);
+			if (reach > 0.002) {
+				const rate = (ambient < 0.5 ? coldRate : hotRate) * reach;
+				temp[i] += (ambient - temp[i]) * (1 - Math.exp(-rate * h));
+			}
+			delta[i] = 0;
 		}
-		delta[i] = 0;
+	} else {
+		for (let i = 0; i < world.n; i++) delta[i] = 0;
 	}
 	if (conductionRate <= 0) return;
 	const conductivity = conductionRate * h * 0.12;
@@ -662,6 +806,7 @@ function pointerForce(world, i, h) {
 }
 
 function substep(world, h) {
+	if (world.heat.dirty) solveHeatMap(world);
 	const n = world.n;
 	const x = world.x, y = world.y, vx = world.vx, vy = world.vy;
 	const px = world.px, py = world.py;
@@ -761,10 +906,39 @@ function pickBead(world, x, y, pad) {
 	return best;
 }
 
+/* ------------------------- zone handles ------------------------- */
+
+const ZONE_LINES = ["coldEnd", "hotStart"];	// the two draggable band edges
+
+const ZONE_PAD = 18;		// px around a line that still counts as a grab
+
+/* Which draggable line (if any) is under the pointer: the waterline or one of the two
+   band edges. Lines win over beads only when no bead is being grabbed. */
+function pickZone(world, x, y) {
+	const t = world.tank;
+	if (x < t.x0 - ZONE_PAD || x > t.x1 + ZONE_PAD) return "";
+	const H = world.H;
+	let best = "", bestD = ZONE_PAD;
+	for (let i = 0; i < ZONE_LINES.length; i++) {
+		const key = ZONE_LINES[i];
+		const lineY = key === "coldEnd" ? H * world.coldZoneEnd : H * world.hotZoneStart;
+		const d = Math.abs(y - lineY);
+		if (d < bestD) { bestD = d; best = key; }
+	}
+	return best;
+}
+
+function setZoneFromY(world, key, y) {
+	const frac = y / world.H;
+	if (key === "coldEnd") setColdZoneEnd(world, frac);
+	else setHotZoneStart(world, frac);
+}
+
 function pointerMove(world, x, y) {
 	const ptr = world.pointer;
 	if (ptr.down && Math.abs(x - ptr.x) + Math.abs(y - ptr.y) > 2) ptr.moved += 2;
 	ptr.x = x; ptr.y = y;
+	if (ptr.zone) setZoneFromY(world, ptr.zone, y);
 }
 
 function pointerDown(world, x, y, now) {
@@ -773,6 +947,16 @@ function pointerDown(world, x, y, now) {
 	ptr.vx = 0; ptr.vy = 0;
 	ptr.down = true;
 	ptr.moved = 0; ptr.downT = now;
+	ptr.grab = -1;
+	ptr.zone = "";
+	/* a bead under the cursor is what the user meant; a band line is grabbable where
+	   the water is clear (it spans the whole basin, so there is always such a spot) */
+	const zone = pickBead(world, x, y, 16) < 0 ? pickZone(world, x, y) : "";
+	if (zone) {
+		ptr.zone = zone;
+		setZoneFromY(world, zone, y);
+		return;
+	}
 	ptr.grab = pickBead(world, x, y, 16);
 	if (ptr.grab >= 0) {
 		world.vx[ptr.grab] *= 0.2;
@@ -784,7 +968,8 @@ function pointerDown(world, x, y, now) {
 function pointerUp(world, now) {
 	const ptr = world.pointer;
 	ptr.vx = 0; ptr.vy = 0;
-	if (ptr.grab >= 0) ptr.grab = -1;
+	if (ptr.zone) ptr.zone = "";
+	else if (ptr.grab >= 0) ptr.grab = -1;
 	else if (ptr.moved < 7 && now - ptr.downT < 350) addBead(world, ptr.x, ptr.y);
 	ptr.down = false;
 }
@@ -794,30 +979,75 @@ function pointerUp(world, now) {
 /* One flat object holds everything the page's controls set, so copying a scene and
    pasting it back (or into another window) is exact. Keys are short on purpose: this
    string gets pasted into chat. `readSettings` rounds, `applySettings` clamps through
-   the same setters the sliders use. */
-const SCENARIO_PRESETS = {
-	convectionThermal: {
-		fill: 0.4, radius: 14, water: 0.3, coldEnd: 0.3, hotStart: 0.75,
-		coldPower: 0.7, hotPower: 2, lift: 0.3, bonds: 0.4, bondTemp: 2.5,
-		conduction: 0.25, size: -1, arch: -10, buoyancy: 0.2, mass: 1, tempView: true,
+   the same setters the sliders use.
+
+   A PRESETS entry either carries a whole scene (`kind: "scene"`, applied and re-dealt)
+   or only the two couplings (`kind: "coupling"`, applied to the live bed). The list is
+   the select's content and the only place a preset's label lives. */
+const PRESETS = [
+	{
+		id: "thermal", kind: "scene", label: "Convection · lift by thermal (−size)",
+		settings: {
+			fill: 0.4, radius: 14, water: 0.3, coldEnd: 0.3, hotStart: 0.75,
+			coldPower: 0.7, hotPower: 2, lift: 0.3, bonds: 0.4, bondTemp: 2.5,
+			conduction: 0.25, size: -1, arch: -10, buoyancy: 0.2, mass: 1, view: "temp",
+		},
 	},
-	convectionHeat: {
-		fill: 0.3, radius: 14, water: 0.3, coldEnd: 0.3, hotStart: 0.75,
-		coldPower: 1, hotPower: 2, lift: 0.8, bonds: 0.4, bondTemp: 2.5,
-		conduction: 0.1, size: -1, arch: -4, buoyancy: 0.55, mass: 1, tempView: true,
+	{
+		id: "heat", kind: "scene", label: "Convection · lift by heat",
+		settings: {
+			fill: 0.3, radius: 14, water: 0.3, coldEnd: 0.3, hotStart: 0.75,
+			coldPower: 1, hotPower: 2, lift: 0.8, bonds: 0.4, bondTemp: 2.5,
+			conduction: 0.1, size: -1, arch: -4, buoyancy: 0.55, mass: 1, view: "temp",
+		},
 	},
-	convectionThermalGrow: {
-		fill: 0.4, radius: 14, water: 0.3, coldEnd: 0.4, hotStart: 0.75,
-		coldPower: 1, hotPower: 2, lift: 0.5, bonds: 0.5, bondTemp: 2, conduction: 1,
-		size: 1, arch: 2, buoyancy: 0.85, mass: 1, tempView: true,
+	{
+		id: "thermalGrow", kind: "scene", label: "Convection · lift by thermal (+size)",
+		settings: {
+			fill: 0.4, radius: 14, water: 0.3, coldEnd: 0.4, hotStart: 0.75,
+			coldPower: 1, hotPower: 2, lift: 0.5, bonds: 0.5, bondTemp: 2, conduction: 1,
+			size: 1, arch: 2, buoyancy: 0.85, mass: 1, view: "temp",
+		},
 	},
-	convectionBalanced: {
-		fill: 0.56, radius: 14, water: 0.3, coldEnd: 0.4, hotStart: 0.75,
-		coldPower: 1, hotPower: 2, lift: 0.7, bonds: 0.9, bondTemp: 1.5, conduction: 1.9,
-		size: -1, arch: -5, buoyancy: 0.3, mass: 1, tempView: true,
+	{
+		id: "balanced", kind: "scene", label: "Convection · filled, balanced",
+		settings: {
+			fill: 0.56, radius: 14, water: 0.3, coldEnd: 0.4, hotStart: 0.75,
+			coldPower: 1, hotPower: 2, lift: 0.7, bonds: 0.9, bondTemp: 1.5, conduction: 1.9,
+			size: -1, arch: -5, buoyancy: 0.3, mass: 1, view: "temp",
+		},
 	},
-};
-const SETTINGS = SCENARIO_PRESETS.convectionThermal;
+	{
+		id: "sparseRaft", kind: "scene", label: "Sparse raft · the 0.4.0 default",
+		settings: {
+			fill: 0.21, radius: 14, water: 0.3, coldEnd: 0.56, hotStart: 0.78,
+			coldPower: 2.5, hotPower: 2.5, lift: 0.4, bonds: 0.72, bondTemp: 2,
+			conduction: 1, size: -0.35, arch: -2.5, buoyancy: 1, mass: 1, view: "density",
+		},
+	},
+	{ id: "shrinkFlow", kind: "coupling", label: "Hot shrinks · flow only", size: -1, arch: 0 },
+	{ id: "bigFloats", kind: "coupling", label: "Big beads float", size: 0, arch: 4 },
+	{ id: "shrinkConvection", kind: "coupling", label: "Convection · hot shrinks and rises", size: -1, arch: -4 },
+	{ id: "growConvection", kind: "coupling", label: "Convection · hot grows and rises", size: 1, arch: 4 },
+	{ id: "shrinkStable", kind: "coupling", label: "Stable · hot shrinks and sinks", size: -1, arch: 4 },
+	{ id: "growStable", kind: "coupling", label: "Stable · hot grows and sinks", size: 1, arch: -4 },
+];
+
+const SETTINGS = PRESETS[0].settings;
+const PRESET_BY_ID = {};
+for (const preset of PRESETS) PRESET_BY_ID[preset.id] = preset;
+
+/* a scene preset applies its whole table (the caller re-deals); a coupling preset
+   moves only the two couplings and leaves the bed, its fill and its zones alone */
+function applyPreset(world, preset) {
+	if (!preset) return [];
+	if (preset.kind === "coupling") {
+		setSizeResponse(world, preset.size);
+		setArchSize(world, preset.arch);
+		return [];
+	}
+	return applySettings(world, preset.settings);
+}
 
 const round = (value, digits) => Number(Number(value).toFixed(digits));
 
@@ -838,33 +1068,45 @@ function readSettings(world) {
 		arch: round(world.archSize, 1),
 		buoyancy: round(world.buoyancy, 2),
 		mass: round(world.massScale, 2),
-		tempView: !!world.temperatureView,
+		view: world.view,
 	};
 }
 
+/* One key -> setter table: the sliders, a paste and a preset all come through here, so
+   no path can set a value the others would clamp differently. */
+const SETTERS = {
+	fill: setFillFraction,
+	radius: setTypicalRadius,
+	water: setWaterFrac,
+	coldEnd: setColdZoneEnd,
+	hotStart: setHotZoneStart,
+	coldPower: setColdPower,
+	hotPower: setHotPower,
+	lift: setThermalLift,
+	bonds: setBondStrength,
+	bondTemp: setBondTempExp,
+	conduction: setConductionRate,
+	size: setSizeResponse,
+	arch: setArchSize,
+	buoyancy: setBuoyancy,
+	mass: setMassScale,
+};
+
+function setSetting(world, key, value) {
+	if (key === "view") return setView(world, value);
+	if (SETTERS[key]) SETTERS[key](world, value);
+}
+
 /* Tolerant by design: unknown keys are ignored and missing keys keep their value, so a
-   hand-edited or older string still applies. Returns the keys it did not recognise. */
+   hand-edited string still applies. Returns the keys it did not recognise. */
 function applySettings(world, settings) {
 	const known = Object.keys(SETTINGS);
 	const ignored = [];
-	for (const key of Object.keys(settings || {})) if (known.indexOf(key) < 0) ignored.push(key);
-	const value = key => (settings && typeof settings[key] === "number" && isFinite(settings[key]) ? settings[key] : undefined);
-	if (value("fill") !== undefined) setFillFraction(world, value("fill"));
-	if (value("radius") !== undefined) setTypicalRadius(world, value("radius"));
-	if (value("water") !== undefined) setWaterFrac(world, value("water"));
-	world.coldZoneEnd = value("coldEnd") !== undefined ? clamp(value("coldEnd"), 0.10, 0.80) : world.coldZoneEnd;
-	world.hotZoneStart = value("hotStart") !== undefined ? clamp(value("hotStart"), 0.40, 0.95) : world.hotZoneStart;
-	if (value("coldPower") !== undefined) setColdPower(world, value("coldPower"));
-	if (value("hotPower") !== undefined) setHotPower(world, value("hotPower"));
-	if (value("lift") !== undefined) setThermalLift(world, value("lift"));
-	if (value("bonds") !== undefined) setBondStrength(world, value("bonds"));
-	if (value("bondTemp") !== undefined) setBondTempExp(world, value("bondTemp"));
-	if (value("conduction") !== undefined) setConductionRate(world, value("conduction"));
-	if (value("size") !== undefined) setSizeResponse(world, value("size"));
-	if (value("arch") !== undefined) setArchSize(world, value("arch"));
-	if (value("buoyancy") !== undefined) setBuoyancy(world, value("buoyancy"));
-	if (value("mass") !== undefined) setMassScale(world, value("mass"));
-	if (settings && typeof settings.tempView === "boolean") world.temperatureView = settings.tempView;
+	for (const key of Object.keys(settings || {})) {
+		if (known.indexOf(key) < 0) { ignored.push(key); continue; }
+		if (key === "view") { if (typeof settings.view === "string") setView(world, settings.view); continue; }
+		if (typeof settings[key] === "number" && isFinite(settings[key])) SETTERS[key](world, settings[key]);
+	}
 	return ignored;
 }
 
@@ -875,10 +1117,12 @@ if (typeof module !== "undefined" && module.exports) {
 		setSourceRate, setConductionRate, setSizeResponse, setArchSize, setBuoyancy,
 		setTypicalRadius, setFillFraction, setMassScale, setWaterFrac,
 		setColdZoneEnd, setHotZoneStart, setColdPower, setHotPower, setThermalLift,
-		setBondStrength, setBondTempExp,
-		SETTINGS, SCENARIO_PRESETS, readSettings, applySettings,
-		disturb, pickBead, pointerMove, pointerDown, pointerUp,
+		setBondStrength, setBondTempExp, setView,
+		SETTINGS, PRESETS, PRESET_BY_ID, applyPreset, readSettings, applySettings, setSetting, SETTERS,
+		RANGES, solveHeatMap, heatAt, heatTarget,
+		disturb, pickBead, pickZone, pointerMove, pointerDown, pointerUp, ZONE_LINES,
 		SPAWN_CAP, WATER_FRAC, DEFAULT_FILL, DEFAULT_RADIUS, SUBSTEP,
 		COLD_ZONE_END, HOT_ZONE_START, LINK_HEAT_MAX, LINK_STRENGTH, LINK_TEMP_EXP, THERMAL_LIFT,
+		HEAT_GRID,
 	};
 }

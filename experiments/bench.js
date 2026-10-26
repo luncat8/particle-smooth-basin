@@ -96,15 +96,17 @@ for (let f = 0; f < PROF_FRAMES; f++) {
 const profMs = Number(process.hrtime.bigint() - t2) / 1e6 / PROF_FRAMES;
 console.log("profile near-cap: n=" + heavy.n + "  " + profMs.toFixed(2) + " ms/frame  peak pairs=" + heavyPairs + "  peak links=" + heavyLinks + " / " + heavy.linkA.length);
 
-// --- archimedes equilibrium: a free bead settles at submerged frac = rho ---
+// --- archimedes equilibrium: a free bead settles at submerged frac = dens ---
 // one bead per world, dropped into still water, 20 s to settle
 function singleBead(dens) {
 	const w = eng.createWorld(W, H);
 	/* isolate density from the shipped couplings: this check is about Archimedes
-	   alone, and a live size coupling would recompute r from baseSize */
+	   alone. The shipped scene runs buoyancy at 0.2x and a live size coupling
+	   would recompute r from baseSize, so both are pinned here. */
 	eng.setSizeResponse(w, 0);
 	eng.setArchSize(w, 0);
 	eng.setThermalLift(w, 0);
+	eng.setBuoyancy(w, 1);
 	w.n = 1; w.rMax = 20;
 	w.x[0] = W / 2; w.y[0] = H * 0.3; w.px[0] = w.x[0]; w.py[0] = w.y[0];
 	w.vx[0] = 0; w.vy[0] = 0;
@@ -116,3 +118,11 @@ const wLight = singleBead(0.5);
 const wHeavy = singleBead(2.0);
 console.log("equilibrium: dens=0.5 -> frac=" + wLight.frac[0].toFixed(3) + " (want ~0.500)"
 	+ "   dens=2.0 -> frac=" + wHeavy.frac[0].toFixed(3) + " (want 1.000, on floor)");
+if (Math.abs(wLight.frac[0] - 0.5) > 0.08) {
+	console.error("FAIL: a half-density bead floats with frac=" + wLight.frac[0].toFixed(3) + ", want 0.50 +- 0.08");
+	process.exitCode = 1;
+}
+if (wHeavy.frac[0] < 0.98) {
+	console.error("FAIL: a twice-density bead sits at frac=" + wHeavy.frac[0].toFixed(3) + ", want on the floor");
+	process.exitCode = 1;
+}

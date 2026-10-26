@@ -5,9 +5,11 @@ const $ = id => document.getElementById(id);
 const canvas = $("c");
 const ctx = canvas.getContext("2d", { alpha: false });
 const statsEl = $("stats");
+const presetSelect = $("scenarioPreset");
 let world = null;
 let assets = null;
 let dpr = 1;
+let activePreset = "";		// the preset the scene came from, "" once a control moved
 const sprites = buildSprites();
 const temperatureSprites = buildTemperatureSprites();
 
@@ -26,47 +28,82 @@ function reportProfile() {
 	window.__profile = profiler.summary();	// one-off, for a headless driver
 }
 
+function percentValue(value) {
+	return Math.round(value) + "%";
+}
+
+function timesValue(digits) {
+	return value => value.toFixed(digits) + "×";
+}
+
 function signedValue(value) {
 	return (value > 0 ? "+" : "") + value.toFixed(2);
 }
 
-function percentValue(percent) {
-	return Math.round(percent) + "%";
-}
-
-/* every control is a pure function of the world, so one pass can sync the panel after
-   a paste, a preset or a reset */
-const CONTROL_VIEWS = [
-	{ id: "coldZoneEnd", out: "coldZoneValue", read: world => world.coldZoneEnd * 100, text: percentValue },
-	{ id: "hotZoneStart", out: "hotZoneValue", read: world => world.hotZoneStart * 100, text: percentValue },
-	{ id: "coldPower", out: "coldPowerValue", read: world => world.coldPower, text: value => value.toFixed(2) + "×" },
-	{ id: "hotPower", out: "hotPowerValue", read: world => world.hotPower, text: value => value.toFixed(2) + "×" },
-	{ id: "thermalLift", out: "liftValue", read: world => world.thermalLift, text: value => value.toFixed(2) },
-	{ id: "bondStrength", out: "bondStrengthValue", read: world => world.linkStrength, text: value => value.toFixed(2) },
-	{ id: "bondTempExp", out: "bondTempValue", read: world => world.linkTempExp, text: value => value.toFixed(1) },
-	{ id: "waterFrac", out: "waterValue", read: world => world.waterFrac * 100, text: percentValue },
-	{ id: "conductionRate", out: "conductionValue", read: world => world.conductionRate, text: value => value.toFixed(2) + "×" },
-	{ id: "sizeResponse", out: "sizeValue", read: world => world.sizeResponse, text: signedValue },
-	{ id: "archSize", out: "archValue", read: world => world.archSize, text: signedValue },
-	{ id: "buoyancy", out: "buoyancyValue", read: world => world.buoyancy, text: value => value.toFixed(2) + "×" },
-	{ id: "fillFraction", out: "fillValue", read: world => world.fillFraction * 100, text: percentValue },
-	{ id: "typicalRadius", out: "radiusValue", read: world => world.typicalRadius, text: value => value + " px" },
-	{ id: "massScale", out: "massValue", read: world => world.massScale, text: value => value.toFixed(2) + "×" },
+/* Every knob is one row: the world key, the slider id, the readout id and how the value
+   reads. The slider's own range and granularity come from the engine's RANGES table, so
+   the page cannot disagree with the world about what a control can be. */
+const CONTROLS = [
+	{ key: "coldEnd", id: "coldZoneEnd", out: "coldZoneValue", text: percentValue },
+	{ key: "hotStart", id: "hotZoneStart", out: "hotZoneValue", text: percentValue },
+	{ key: "coldPower", id: "coldPower", out: "coldPowerValue", text: timesValue(2) },
+	{ key: "hotPower", id: "hotPower", out: "hotPowerValue", text: timesValue(2) },
+	{ key: "conduction", id: "conductionRate", out: "conductionValue", text: timesValue(2) },
+	{ key: "lift", id: "thermalLift", out: "liftValue", text: value => value.toFixed(2) },
+	{ key: "arch", id: "archSize", out: "archValue", text: signedValue },
+	{ key: "buoyancy", id: "buoyancy", out: "buoyancyValue", text: timesValue(2) },
+	{ key: "size", id: "sizeResponse", out: "sizeValue", text: signedValue },
+	{ key: "bonds", id: "bondStrength", out: "bondStrengthValue", text: value => value.toFixed(2) },
+	{ key: "bondTemp", id: "bondTempExp", out: "bondTempValue", text: value => value.toFixed(1) },
+	{ key: "water", id: "waterFrac", out: "waterValue", text: percentValue },
+	{ key: "fill", id: "fillFraction", out: "fillValue", text: percentValue },
+	{ key: "radius", id: "typicalRadius", out: "radiusValue", text: value => value + " px" },
+	{ key: "mass", id: "massScale", out: "massValue", text: timesValue(2) },
 ];
 
-function markPresetCustom() {
-	$("scenarioPreset").value = "custom";
+const VIEW_LABELS = { density: "density", temp: "temperature", heat: "heat map" };
+const VIEW_CYCLE = ["density", "temp", "heat"];
+
+const controlById = {};
+for (const control of CONTROLS) controlById[control.key] = control;
+
+/* percentage sliders show 0..100 while the world keeps 0..1 */
+function controlToWorld(control, sliderValue) {
+	return RANGES[control.key].percent ? sliderValue / 100 : sliderValue;
 }
 
+function worldToControl(control) {
+	const range = RANGES[control.key];
+	return world[range.field] * (range.percent ? 100 : 1);
+}
+
+function markPresetCustom() {
+	activePreset = "";
+	presetSelect.value = "custom";
+}
+
+/* one pass drives the whole panel, so a preset, a paste and a reset cannot leave a
+   stale readout behind */
 function syncPanel() {
-	for (const view of CONTROL_VIEWS) {
-		const value = view.read(world);
-		$(view.id).value = value;
-		$(view.out).textContent = view.text(value);
+	for (const control of CONTROLS) {
+		const value = worldToControl(control);
+		$(control.id).value = value;
+		$(control.out).textContent = control.text(value);
 	}
-	$("viewToggle").setAttribute("aria-pressed", world.temperatureView ? "true" : "false");
-	$("viewToggle").textContent = "Temperature hue: " + (world.temperatureView ? "on" : "off");
+	$("viewToggle").textContent = "View: " + VIEW_LABELS[world.view];
+	$("viewToggle").setAttribute("aria-pressed", world.view === "temp" ? "true" : "false");
+	presetSelect.value = activePreset || "custom";
 	updateCountLabel();
+}
+
+/* the two band sliders follow a drag inside the canvas without re-syncing the panel */
+function syncZoneControls() {
+	for (let i = 0; i < 2; i++) {
+		const control = CONTROLS[i];
+		const value = worldToControl(control);
+		$(control.id).value = value;
+		$(control.out).textContent = control.text(value);
+	}
 }
 
 function setEcho(text, tone) {
@@ -75,19 +112,38 @@ function setEcho(text, tone) {
 	echo.className = "echo" + (tone ? " " + tone : "");
 }
 
-function applyAndDeal(settings, presetName) {
-	const ignored = applySettings(world, settings);
-	$("scenarioPreset").value = presetName || "custom";
-	spawnBed(world);
-	assets = makeAssets(ctx, world);
+function refreshAssets() {
+	assets = makeAssets(ctx, world);	// gradients and paths are geometry-bound
 	assets.sprites = sprites;
 	assets.tempSprites = temperatureSprites;
-	syncPanel();
+}
+
+function reportApplied(ignored) {
 	const note = ignored.length ? " · ignored " + ignored.join(",") : "";
 	const line = JSON.stringify(readSettings(world));
 	setEcho("applied " + line + note, ignored.length ? "bad" : "ok");
 	console.log("settings " + line + note);
+}
+
+function applyAndDeal(settings, presetId) {
+	const ignored = applySettings(world, settings);
+	activePreset = presetId || "";
+	spawnBed(world);
+	refreshAssets();
+	syncPanel();
+	reportApplied(ignored);
 	return ignored;
+}
+
+/* a scene preset re-deals the bed; a coupling preset moves only the two couplings and
+   leaves the bed, its fill and its bands alone */
+function applyPresetById(preset) {
+	const ignored = applyPreset(world, preset);
+	activePreset = preset.id;
+	if (preset.kind === "scene") spawnBed(world);
+	refreshAssets();
+	syncPanel();
+	reportApplied(ignored);
 }
 
 function copySettings() {
@@ -99,7 +155,6 @@ function copySettings() {
 		setEcho(text, "ok");
 		console.log("settings " + text);
 	};
-	/* clipboard first, then the old execCommand path for file:// windows */
 	if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
 		navigator.clipboard.writeText(text).then(done, () => legacyCopy(text, done));
 		return text;
@@ -160,18 +215,6 @@ function pasteSettings() {
 	});
 }
 
-function syncSizeControl(value) {
-	$("sizeResponse").value = value;
-	setSizeResponse(world, value);
-	$("sizeValue").textContent = signedValue(value);
-}
-
-function syncArchControl(value) {
-	$("archSize").value = value;
-	setArchSize(world, value);
-	$("archValue").textContent = signedValue(value);
-}
-
 function fit() {
 	const W = window.innerWidth, H = window.innerHeight;
 	dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -182,9 +225,7 @@ function fit() {
 	ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 	if (!world) world = createWorld(W, H);
 	else resizeWorld(world, W, H);
-	assets = makeAssets(ctx, world);
-	assets.sprites = sprites;
-	assets.tempSprites = temperatureSprites;
+	refreshAssets();
 	updateCountLabel();
 }
 
@@ -205,11 +246,56 @@ function updateStats() {
 	let totalTemp = 0;
 	for (let i = 0; i < world.n; i++) totalTemp += world.temp[i];
 	const avgTemp = world.n ? totalTemp / world.n : 0;
-	statsEl.textContent = world.n + " BEADS · " + world.linkActiveN + " ACTIVE LINKS · MEAN T " + avgTemp.toFixed(2) + " · " + Math.round(fpsEMA) + " FPS";
+	statsEl.textContent = world.n + " BEADS · " + world.linkActiveN + " ACTIVE LINKS · MEAN T " + avgTemp.toFixed(2)
+		+ " · " + VIEW_LABELS[world.view].toUpperCase() + " · " + Math.round(fpsEMA) + " FPS";
 }
 
+/* the select is built from the engine's PRESETS table: no label or id is copied here */
+function buildPresetSelect() {
+	presetSelect.textContent = "";
+	const custom = document.createElement("option");
+	custom.value = "custom";
+	custom.textContent = "Custom sliders";
+	presetSelect.appendChild(custom);
+	let sceneGroup = document.createElement("optgroup");
+	sceneGroup.label = "Scenes (re-deal the bed)";
+	let couplingGroup = document.createElement("optgroup");
+	couplingGroup.label = "Couplings (live bed)";
+	for (const preset of PRESETS) {
+		const option = document.createElement("option");
+		option.value = preset.id;
+		option.textContent = preset.label;
+		(preset.kind === "scene" ? sceneGroup : couplingGroup).appendChild(option);
+	}
+	presetSelect.appendChild(sceneGroup);
+	presetSelect.appendChild(couplingGroup);
+}
+
+/* slider spans and steps live in the engine's RANGES, so markup carries ids only */
+function configureControls() {
+	for (const control of CONTROLS) {
+		const range = RANGES[control.key];
+		const input = $(control.id);
+		input.min = range.ui[0];
+		input.max = range.ui[1];
+		input.step = range.percent ? range.step * 100 : range.step;
+		input.addEventListener("input", () => {
+			markPresetCustom();
+			setSetting(world, control.key, controlToWorld(control, Number(input.value)));
+			$(control.out).textContent = control.text(worldToControl(control));
+			if (control.key === "water") refreshAssets();
+			updateCountLabel();
+		});
+		input.addEventListener("change", () => {
+			if (control.key === "fill" || control.key === "radius") spawnBed(world);
+		});
+	}
+}
+
+buildPresetSelect();
+configureControls();
 fit();
-applyAndDeal(SETTINGS, "convectionThermal");
+applyPresetById(PRESETS[0]);
 setEcho("copy writes one JSON line · paste reads and applies clipboard", "");
 
 let resizeTimer = 0;
@@ -228,151 +314,57 @@ canvas.addEventListener("pointerdown", e => {
 	setPointer(e);
 	canvas.setPointerCapture(e.pointerId);
 	pointerDown(world, world.pointer.x, world.pointer.y, performance.now());
-	canvas.style.cursor = "grabbing";
+	canvas.style.cursor = world.pointer.zone ? "ns-resize" : "grabbing";
 });
 
 canvas.addEventListener("pointermove", e => {
 	setPointer(e);
-	if (world.pointer.down) return;
-	const hit = pickBead(world, world.pointer.x, world.pointer.y, 8);
-	canvas.style.cursor = hit >= 0 ? "grab" : "default";
+	if (world.pointer.down) {
+		if (world.pointer.zone) syncZoneControls();
+		return;
+	}
+	/* the same 16 px the engine uses when deciding bead-or-band on pointer down,
+	   so the cursor always predicts what a click will grab */
+	if (pickBead(world, world.pointer.x, world.pointer.y, 16) >= 0) canvas.style.cursor = "grab";
+	else canvas.style.cursor = pickZone(world, world.pointer.x, world.pointer.y) ? "ns-resize" : "default";
 });
 
 function endPointer(now) {
 	pointerUp(world, now);
 	canvas.style.cursor = "default";
+	syncPanel();
 }
 canvas.addEventListener("pointerup", () => endPointer(performance.now()));
 canvas.addEventListener("pointercancel", () => endPointer(Infinity));
 canvas.addEventListener("pointerleave", () => { if (!world.pointer.down) canvas.style.cursor = "default"; });
 canvas.addEventListener("contextmenu", e => e.preventDefault());
 
-$("coldZoneEnd").addEventListener("input", e => {
-	markPresetCustom();
-	setColdZoneEnd(world, Number(e.target.value) / 100);
-	$("coldZoneValue").textContent = e.target.value + "%";
+presetSelect.addEventListener("change", e => {
+	const preset = PRESET_BY_ID[e.target.value];
+	if (preset) applyPresetById(preset);
 });
-
-$("hotZoneStart").addEventListener("input", e => {
-	markPresetCustom();
-	setHotZoneStart(world, Number(e.target.value) / 100);
-	$("hotZoneValue").textContent = e.target.value + "%";
-});
-
-$("coldPower").addEventListener("input", e => {
-	markPresetCustom();
-	setColdPower(world, Number(e.target.value));
-	$("coldPowerValue").textContent = Number(e.target.value).toFixed(2) + "×";
-});
-
-$("hotPower").addEventListener("input", e => {
-	markPresetCustom();
-	setHotPower(world, Number(e.target.value));
-	$("hotPowerValue").textContent = Number(e.target.value).toFixed(2) + "×";
-});
-
-$("thermalLift").addEventListener("input", e => {
-	markPresetCustom();
-	setThermalLift(world, Number(e.target.value));
-	$("liftValue").textContent = Number(e.target.value).toFixed(2);
-});
-
-$("bondStrength").addEventListener("input", e => {
-	markPresetCustom();
-	setBondStrength(world, Number(e.target.value));
-	$("bondStrengthValue").textContent = Number(e.target.value).toFixed(2);
-});
-
-$("bondTempExp").addEventListener("input", e => {
-	markPresetCustom();
-	setBondTempExp(world, Number(e.target.value));
-	$("bondTempValue").textContent = Number(e.target.value).toFixed(1);
-});
-
-$("waterFrac").addEventListener("input", e => {
-	markPresetCustom();
-	setWaterFrac(world, Number(e.target.value) / 100);
-	$("waterValue").textContent = e.target.value + "%";
-	assets = makeAssets(ctx, world);	// the water gradients are geometry-bound
-	assets.sprites = sprites;
-	assets.tempSprites = temperatureSprites;
-});
-
-$("conductionRate").addEventListener("input", e => {
-	markPresetCustom();
-	const value = Number(e.target.value);
-	setConductionRate(world, value);
-	$("conductionValue").textContent = value.toFixed(2) + "×";
-});
-
-$("sizeResponse").addEventListener("input", e => {
-	syncSizeControl(Number(e.target.value));
-	markPresetCustom();
-});
-
-$("archSize").addEventListener("input", e => {
-	syncArchControl(Number(e.target.value));
-	markPresetCustom();
-});
-
-$("buoyancy").addEventListener("input", e => {
-	markPresetCustom();
-	const value = Number(e.target.value);
-	setBuoyancy(world, value);
-	$("buoyancyValue").textContent = value.toFixed(2) + "×";
-});
-
-$("scenarioPreset").addEventListener("change", e => {
-	const preset = SCENARIO_PRESETS[e.target.value];
-	if (preset) applyAndDeal(preset, e.target.value);
-});
-
-$("fillFraction").addEventListener("input", e => {
-	markPresetCustom();
-	$("fillValue").textContent = e.target.value + "%";
-	updateCountLabel();
-});
-
-$("typicalRadius").addEventListener("input", e => {
-	markPresetCustom();
-	$("radiusValue").textContent = e.target.value + " px";
-	updateCountLabel();
-});
-
-$("massScale").addEventListener("input", e => {
-	markPresetCustom();
-	const value = Number(e.target.value);
-	setMassScale(world, value);
-	$("massValue").textContent = value.toFixed(2) + "×";
-});
-
-function redealFromControls() {
-	setFillFraction(world, Number($("fillFraction").value) / 100);
-	setTypicalRadius(world, Number($("typicalRadius").value));
-	setSizeResponse(world, Number($("sizeResponse").value));
-	setMassScale(world, Number($("massScale").value));
-	spawnBed(world);
-}
-
-$("fillFraction").addEventListener("change", redealFromControls);
 
 $("copySettings").addEventListener("click", copySettings);
 $("pasteSettings").addEventListener("click", pasteSettings);
-$("resetSettings").addEventListener("click", () => applyAndDeal(SETTINGS, "convectionThermal"));
-$("typicalRadius").addEventListener("change", redealFromControls);
-$("redeal").addEventListener("click", redealFromControls);
+$("resetSettings").addEventListener("click", () => applyPresetById(PRESETS[0]));
+$("redeal").addEventListener("click", () => spawnBed(world));
 
 $("viewToggle").addEventListener("click", () => {
 	markPresetCustom();
-	world.temperatureView = !world.temperatureView;
+	setView(world, VIEW_CYCLE[(VIEW_CYCLE.indexOf(world.view) + 1) % VIEW_CYCLE.length]);
 	syncPanel();
 });
 
 window.addEventListener("keydown", e => {
-	if (e.key === "r" || e.key === "R") redealFromControls();
+	if (e.key === "r" || e.key === "R") spawnBed(world);
 	if (e.code === "Space") {
 		e.preventDefault();
 		splash(world);
+	}
+	if (e.key >= "1" && e.key <= "3") {
+		markPresetCustom();
+		setView(world, VIEW_CYCLE[Number(e.key) - 1]);
+		syncPanel();
 	}
 });
 

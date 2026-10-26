@@ -86,28 +86,38 @@ var SAVING = false;
 var COPY_TIMER = 0;
 
 var VIEW_W = 1280, VIEW_H = 800;
-var BUDGET_MS = 16.7;
+/* ?budget=60 raises the frame budget for a host that cannot time a browser frame:
+   the node sandbox compiles this page through vm.runInContext, which leaves the
+   engine unoptimized and roughly ten times slower. A browser run reads 16.7. */
+function budgetFromSearch() {
+	var match = searchString().match(/[?&]budget=([\d.]+)/);
+	var value = match ? Number(match[1]) : 0;
+	return value > 0 ? value : 16.7;
+}
+var BUDGET_MS = budgetFromSearch();
 
-/* three scene weights and three draw variants: the matrix 0.3-plan.md asks for */
+/* three scene weights and three draw variants: the matrix archive/0.3-plan.md asks for */
 var SIZES = {
 	light: { id: "light", fill: 0.42, radius: 21 },
 	default: { id: "default", fill: 0.50, radius: 14 },
 	cap: { id: "cap", fill: 0.70, radius: 10 },
 };
 var VARIANTS = {
-	dpr1: { id: "dpr1", dpr: 1, temp: false },
-	dpr2: { id: "dpr2", dpr: 2, temp: false },
-	"dpr1-temp": { id: "dpr1-temp", dpr: 1, temp: true },
+	dpr1: { id: "dpr1", dpr: 1, view: "density" },
+	dpr2: { id: "dpr2", dpr: 2, view: "density" },
+	"dpr1-temp": { id: "dpr1-temp", dpr: 1, view: "temp" },
 };
 var PROFILES = {
 	full: { warm: 45, measure: 150, sizes: ["light", "default", "cap"], variants: ["dpr1", "dpr2", "dpr1-temp"], extras: true },
 	quick: { warm: 20, measure: 90, sizes: ["default"], variants: ["dpr1", "dpr2"], extras: false },
 };
-/* cold/high-link preset and a stirred near-cap scene: the two interaction cases */
-var PRESET_CASE = { id: "cold-links", fill: 0.50, radius: 14, dpr: 1, temp: false, preset: [-1, -4], rates: [2, 2], warm: 240, measure: 150 };
-var STIR_CASE = { id: "stirred-cap", fill: 0.70, radius: 10, dpr: 1, temp: false, interaction: true, warm: 60, measure: 120 };
+/* cold/high-link preset, a stirred near-cap scene and the heat-map view at the cap:
+   the three interaction cases */
+var PRESET_CASE = { id: "cold-links", fill: 0.50, radius: 14, dpr: 1, view: "density", preset: [-1, -4], rates: [2, 2], warm: 240, measure: 150 };
+var STIR_CASE = { id: "stirred-cap", fill: 0.70, radius: 10, dpr: 1, view: "density", interaction: true, warm: 60, measure: 120 };
+var HEAT_CASE = { id: "heat cap", fill: 0.70, radius: 10, dpr: 1, view: "heat", warm: 45, measure: 150 };
 /* the scene the app actually opens with, straight from the engine's settings */
-var SHIPPED_CASE = { id: "shipped", settings: SETTINGS, dpr: 1, temp: true, warm: 90, measure: 150 };
+var SHIPPED_CASE = { id: "shipped", settings: SETTINGS, dpr: 1, view: SETTINGS.view, warm: 90, measure: 150 };
 
 /* ---------------------------- log + status ---------------------------- */
 
@@ -531,12 +541,13 @@ function perfCases(profile) {
 		var size = SIZES[spec.sizes[i]];
 		for (var j = 0; j < spec.variants.length; j++) {
 			var variant = VARIANTS[spec.variants[j]];
-			cases.push({ id: size.id + " " + variant.id, fill: size.fill, radius: size.radius, dpr: variant.dpr, temp: variant.temp, warm: spec.warm, measure: spec.measure });
+			cases.push({ id: size.id + " " + variant.id, fill: size.fill, radius: size.radius, dpr: variant.dpr, view: variant.view, warm: spec.warm, measure: spec.measure });
 		}
 	}
 	if (!spec.extras) return cases;
 	cases.push(copyCase(PRESET_CASE));
 	cases.push(copyCase(STIR_CASE));
+	cases.push(copyCase(HEAT_CASE));
 	return cases;
 }
 
@@ -568,7 +579,7 @@ function addRow(row) {
 	var text = "<td>" + row.id + "</td>"
 		+ "<td class=\"num\">" + row.n + "</td>"
 		+ "<td class=\"num\">" + row.dpr + "</td>"
-		+ "<td>" + (row.view ? "temp" : "density") + "</td>"
+		+ "<td>" + row.view + "</td>"
 		+ "<td class=\"num\">" + row.frame.p50.toFixed(2) + "</td>"
 		+ "<td class=\"num\">" + row.frame.p95.toFixed(2) + "</td>"
 		+ "<td class=\"num\">" + row.sim.p95.toFixed(2) + "</td>"
@@ -602,7 +613,8 @@ function runPerfCase(kase, options) {
 			setSourceRate(world, kase.rates[0]);
 			setConductionRate(world, kase.rates[1]);
 		}
-		world.temperatureView = !!kase.temp;
+		/* the app's own view switch, so the matrix measures the draw path it ships */
+		setView(world, kase.view || "density");
 		resizeBackingStore(kase.dpr);
 		var assets = sceneAssets(world);
 		var profiler = createProfiler(measure);
@@ -619,7 +631,7 @@ function runPerfCase(kase, options) {
 				? profiler.summary()
 				: { frames: 0, frame: emptyStats(), sim: emptyStats(), render: emptyStats() };
 			row = {
-				id: kase.id, n: world.n, links: world.linkActiveN, dpr: kase.dpr || 1, view: !!kase.temp,
+				id: kase.id, n: world.n, links: world.linkActiveN, dpr: kase.dpr || 1, view: world.view,
 				stopped: !!stopped, frames: summary.frames,
 				frame: summary.frame, sim: summary.sim, render: summary.render,
 				interval: intervals.count ? intervals.summary() : emptyStats(),
