@@ -6,7 +6,7 @@ settings   read -> apply -> read fixed point · partial paste · unknown keys re
 thermal    rates, sizing, buoyancy, size coupling, thawing links, pointer, wave steps, coverage
 bench      0.30 ms/frame at n=356 over 60 s sim · near-cap 1500 2.10 ms/frame · peak pairs 3683, peak links 2036
            equilibrium: dens 0.5 -> frac 0.500 · dens 2.0 -> frac 1.000 (on floor)
-balance    shipped, 40 s: n=340 bedTop 385 water 240 (1/340 above the line) links 327/438/459/484
+balance    shipped, 40 s: n=340 bed top 426 spawn -> 281 settled, water 240 (1/340 above the line) links 327/438/459/484
            cold 223 top/bottom T 0.15/0.95 · hot beads rising 5.5/s · stir 503 -> recover 480 · maxV 62 · 0.34 ms
            rejected: fill 0.22 (bed top 39 px above the line), water 0.42 (bed 73 px out), hotStart 0.84 (4.0/s up)
 zone sweep 480 frames, source 1x: shipped cold 0.56 / hot 0.78 -> 365 avg / 451 max links, 205 cold, 344 coldBonds,
