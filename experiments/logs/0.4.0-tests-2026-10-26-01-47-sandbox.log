@@ -1,0 +1,24 @@
+chrome 147 · linux x86_64 · dpr 1 · hw 4 · gpu no-webgl · webgpu no-adapter · isolated no · timer 100.0 us
+browser tests 0.4.0 · 2026-10-26 01:42 · full matrix · budget 16.7 ms/frame
+check boot ok · n=340 · wave 161 cols · tank 1139 px
+check canvas ok · beads repaint 16.4% of 480x320 pixels
+check invariants ok · 120 frames · peak pairs 592 / links 462 within 12000 · no NaN
+check interaction ok · click +1 bead · cancel +0 · drag 165 px · splash h 7.6
+check resize ok · 700x420@2x → 98 beads, restored n=340 at 1280x800
+check thermal ok · temp 0.10-1.00 · r 7.7-25.2 · hot/cold size 11.2/17.7
+check thermal-zone ok · cold 210/340 · 454 bonds · top 0.12 bottom 0.87 · 2 above water · bed top 236 px
+check profile ok · one report at 5 frames · p50 3.00 p95 5.00
+perf shipped · n=340 links=444 · frame p50 0.70 p95 1.40 · sim p95 0.90 · render p95 0.80 · rAF p95 34.30
+perf light dpr1 · n=302 links=471 · frame p50 0.60 p95 1.20 · sim p95 0.50 · render p95 0.80 · rAF p95 23.00
+perf light dpr2 · n=302 links=463 · frame p50 0.60 p95 0.70 · sim p95 0.40 · render p95 0.40 · rAF p95 50.50
+perf light dpr1-temp · n=302 links=484 · frame p50 0.70 p95 1.20 · sim p95 0.60 · render p95 0.70 · rAF p95 23.30
+perf default dpr1 · n=810 links=1438 · frame p50 1.50 p95 2.10 · sim p95 1.40 · render p95 0.90 · rAF p95 19.30
+perf default dpr2 · n=810 links=1441 · frame p50 1.40 p95 1.90 · sim p95 1.20 · render p95 0.80 · rAF p95 61.30
+perf default dpr1-temp · n=810 links=1429 · frame p50 1.50 p95 2.00 · sim p95 1.20 · render p95 0.80 · rAF p95 21.90
+perf cap dpr1 · n=1500 links=2683 · frame p50 2.50 p95 3.00 · sim p95 1.70 · render p95 1.50 · rAF p95 33.30
+perf cap dpr2 · n=1500 links=2673 · frame p50 2.40 p95 2.70 · sim p95 1.40 · render p95 1.30 · rAF p95 71.70
+perf cap dpr1-temp · n=1500 links=2695 · frame p50 2.50 p95 3.30 · sim p95 1.90 · render p95 1.40 · rAF p95 31.60
+perf cold-links · n=810 links=1211 · frame p50 1.50 p95 2.00 · sim p95 1.30 · render p95 0.80 · rAF p95 28.40
+perf stirred-cap · n=1500 links=2899 · frame p50 2.60 p95 3.10 · sim p95 1.80 · render p95 1.40 · rAF p95 30.50
+RESULT pass · checks 8/8 · perf 12/12 within 16.7 ms · worst p95 3.30 ms (cap dpr1-temp) · worst rAF 71.70 ms (cap dpr2)
+wall 64.2 s · tab must stay visible for honest frames

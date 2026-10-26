@@ -1,4 +1,21 @@
 
+## TODO
 
 
+## done:
 
+rescale ranges of sliders to be more centered on these presets.
+
+
+arrows and group them to be near:
+⇑ Heat lifts
+⇑ Archimedes force vs size
+⇑ Buoyancy strength
+
+
+visual html indicator=slider to set COLD_ZONE_END
+sliders power cold and hot of zones
+
+slider to set links strength vs temperature coefficient
+
+buttons to copy/paste gui settings so i can easy tell what default is good

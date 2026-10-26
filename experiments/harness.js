@@ -104,6 +104,7 @@ function waitFor(predicate, label, timeoutMs) {
 	assert.match(env, /timer [\d.]+ us/, "environment line reports the timer step");
 
 	const checks = harness.checks();
+	console.log("checks: " + checks.map(check => check.id + "=" + (check.ok ? "ok" : check.detail)).join(" · "));
 	assert.equal(checks.length, 8, "eight checks run");
 	assert.ok(checks.some(check => check.id === "thermal-zone" && /bonds/.test(check.detail) && /above water/.test(check.detail)),
 		"the default-rate thermal zone check reports bond counts");
@@ -127,7 +128,7 @@ function waitFor(predicate, label, timeoutMs) {
 	const row = rows[0];
 	assert.equal(row.frames, 5, "five measured frames");
 	assert.equal(row.id, "shipped", "the first row is the shipped scene");
-	assert.ok(row.n > 250 && row.n < 450, "the shipped scene spawns a few hundred beads, got " + row.n);
+	assert.ok(row.n > 500 && row.n < 800, "the shipped scene spawns around six hundred beads, got " + row.n);
 	assert.ok(Number.isFinite(row.frame.p50) && Number.isFinite(row.frame.p95), "frame percentiles are numbers");
 	assert.ok(row.frame.p95 >= row.frame.p50, "p95 is not below p50");
 	assert.ok(row.sim.p95 >= 0 && row.render.p95 >= 0 && row.interval.p95 >= 0, "stage percentiles are non-negative");

@@ -17,6 +17,7 @@
 	.controls{position:fixed;z-index:3;right:18px;top:18px;width:280px;max-height:calc(100vh - 76px);overflow:auto;padding:14px 16px;background:rgba(8,23,29,.86);border:1px solid rgba(159,216,232,.19);box-shadow:0 12px 40px rgba(0,0,0,.24);backdrop-filter:blur(10px)}
 	.controls h2{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#9fd8e8;margin:0 0 12px}
 	.control{display:block;margin:11px 0 13px}
+	.force-controls{margin:4px 0 12px;padding:1px 0 1px 10px;border-left:1px solid rgba(120,213,219,.32)}
 	.control span{display:flex;justify-content:space-between;gap:12px;font-size:10px;letter-spacing:.05em;color:rgba(210,236,242,.78)}
 	.control output{color:#a9e2e8;font-variant-numeric:tabular-nums}
 	.control input{width:100%;margin:8px 0 0;accent-color:#78d5db}
@@ -42,33 +43,33 @@
 </div>
 <aside class="controls" aria-label="Simulation controls">
 	<h2>Thermal controls</h2>
-	<label class="control"><span>Cold zone depth <output id="coldZoneValue">56%</output></span><input id="coldZoneEnd" type="range" min="20" max="80" step="1" value="56"><small>cold band from the top of the window; it has to reach the top of the bed</small></label>
-	<label class="control"><span>Hot zone top <output id="hotZoneValue">78%</output></span><input id="hotZoneStart" type="range" min="50" max="95" step="1" value="78"><small>the heated band runs from here down to the floor</small></label>
-	<label class="control"><span>Cold power <output id="coldPowerValue">2.50×</output></span><input id="coldPower" type="range" min="0" max="4" step="0.05" value="2.5"><small>cooling rate in the cold band</small></label>
-	<label class="control"><span>Hot power <output id="hotPowerValue">2.50×</output></span><input id="hotPower" type="range" min="0" max="4" step="0.05" value="2.5"><small>heating rate in the hot band</small></label>
-	<label class="control"><span>Heat lifts <output id="liftValue">0.40</output></span><input id="thermalLift" type="range" min="0" max="1" step="0.01" value="0.4"><small>how much lighter a hot bead is; drives overturning</small></label>
-	<label class="control"><span>Bond strength <output id="bondStrengthValue">0.72</output></span><input id="bondStrength" type="range" min="0" max="1.2" step="0.01" value="0.72"><small>stiffness of a cold contact bond</small></label>
-	<label class="control"><span>Bond vs temperature <output id="bondTempValue">2.0</output></span><input id="bondTempExp" type="range" min="0.5" max="6" step="0.1" value="2"><small>higher: only near-freezing contacts bond at full strength</small></label>
-	<label class="control"><span>Conduction <output id="conductionValue">1.00×</output></span><input id="conductionRate" type="range" min="0" max="4" step="0.05" value="1"><small>heat transfer between nearby beads</small></label>
-	<label class="control"><span>Thermal size <output id="sizeValue">-0.35</output></span><input id="sizeResponse" type="range" min="-1" max="1" step="0.05" value="-0.35"><small>negative: hot shrinks · positive: hot grows</small></label>
-	<label class="control"><span>Archimedes force vs size <output id="archValue">-2.50</output></span><input id="archSize" type="range" min="-10" max="10" step="0.1" value="-2.5"><small>lift scales by size^value; multiplier bounded to 1/8–8×</small></label>
-	<label class="control"><span>Buoyancy strength <output id="buoyancyValue">1.00×</output></span><input id="buoyancy" type="range" min="0" max="2" step="0.05" value="1"><small>0: gravity only · 1×: current density balance</small></label>
-	<label class="control"><span>Quick preset</span><select id="scenarioPreset">
+	<label class="control"><span>Scene preset</span><select id="scenarioPreset">
 		<option value="custom">Custom sliders</option>
-		<option value="shrinkFlow">Hot shrinks · flow only</option>
-		<option value="bigFloats">Big beads float</option>
-		<option value="shrinkConvection">Convection · hot shrinks and rises</option>
-		<option value="growConvection">Convection · hot grows and rises</option>
-		<option value="shrinkStable">Stable · hot shrinks and sinks</option>
-		<option value="growStable">Stable · hot grows and sinks</option>
-	</select><small>presets set thermal size + size coupling only</small></label>
-	<label class="control"><span>Water level <output id="waterValue">30%</output></span><input id="waterFrac" type="range" min="30" max="60" step="0.5" value="30"><small>waterline share of the window; the bed re-floats without a re-deal</small></label>
-	<label class="control"><span>Canvas coverage <output id="fillValue">21%</output></span><input id="fillFraction" type="range" min="8" max="60" step="1" value="21"><small id="countValue">0 beads at typical size</small></label>
+		<option value="convectionThermal">Convection · lift by thermal (−size)</option>
+		<option value="convectionHeat">Convection · lift by heat</option>
+		<option value="convectionThermalGrow">Convection · lift by thermal (+size)</option>
+		<option value="convectionBalanced">Convection · filled, balanced</option>
+	</select><small>presets tune the complete scene; first preset is the default</small></label>
+	<label class="control"><span>Cold zone depth <output id="coldZoneValue">30%</output></span><input id="coldZoneEnd" type="range" min="25" max="55" step="1" value="30"><small>cold band from the top of the window; it has to reach the top of the bed</small></label>
+	<label class="control"><span>Hot zone top <output id="hotZoneValue">75%</output></span><input id="hotZoneStart" type="range" min="65" max="90" step="1" value="75"><small>the heated band runs from here down to the floor</small></label>
+	<label class="control"><span>Cold power <output id="coldPowerValue">0.70×</output></span><input id="coldPower" type="range" min="0" max="2" step="0.05" value="0.7"><small>cooling rate in the cold band</small></label>
+	<label class="control"><span>Hot power <output id="hotPowerValue">2.00×</output></span><input id="hotPower" type="range" min="0.5" max="3.5" step="0.05" value="2"><small>heating rate in the hot band</small></label>
+	<div class="force-controls" aria-label="Convection forces">
+		<label class="control"><span>⇑ Heat lifts <output id="liftValue">0.30</output></span><input id="thermalLift" type="range" min="0.1" max="0.9" step="0.01" value="0.3"><small>how much lighter a hot bead is; drives overturning</small></label>
+		<label class="control"><span>⇑ Archimedes force vs size <output id="archValue">-10.00</output></span><input id="archSize" type="range" min="-10" max="2" step="0.1" value="-10"><small>lift scales by size^value; multiplier bounded to 1/8–8×</small></label>
+		<label class="control"><span>⇑ Buoyancy strength <output id="buoyancyValue">0.20×</output></span><input id="buoyancy" type="range" min="0" max="1.2" step="0.05" value="0.2"><small>0: gravity only · 1×: current density balance</small></label>
+	</div>
+	<label class="control"><span>Thermal size <output id="sizeValue">-1.00</output></span><input id="sizeResponse" type="range" min="-1" max="1" step="0.05" value="-1"><small>negative: hot shrinks · positive: hot grows</small></label>
+	<label class="control"><span>Bond strength <output id="bondStrengthValue">0.40</output></span><input id="bondStrength" type="range" min="0.2" max="1" step="0.01" value="0.4"><small>stiffness of a cold contact bond</small></label>
+	<label class="control"><span>Bond vs temperature <output id="bondTempValue">2.5</output></span><input id="bondTempExp" type="range" min="1" max="3" step="0.1" value="2.5"><small>higher: only near-freezing contacts bond at full strength</small></label>
+	<label class="control"><span>Conduction <output id="conductionValue">0.25×</output></span><input id="conductionRate" type="range" min="0" max="2" step="0.05" value="0.25"><small>heat transfer between nearby beads</small></label>
+	<label class="control"><span>Water level <output id="waterValue">30%</output></span><input id="waterFrac" type="range" min="25" max="40" step="0.5" value="30"><small>waterline share of the window; the bed re-floats without a re-deal</small></label>
+	<label class="control"><span>Canvas coverage <output id="fillValue">40%</output></span><input id="fillFraction" type="range" min="8" max="70" step="1" value="40"><small id="countValue">0 beads at typical size</small></label>
 	<label class="control"><span>Typical radius <output id="radiusValue">14 px</output></span><input id="typicalRadius" type="range" min="8" max="22" step="1" value="14"><small>collision radius at temperature 0.5</small></label>
 	<label class="control"><span>Average mass <output id="massValue">1.00×</output></span><input id="massScale" type="range" min="0.4" max="2.5" step="0.05" value="1"><small>inertia scale; buoyancy density stays independent</small></label>
-	<div class="actions"><button id="viewToggle" type="button" aria-pressed="false">Temperature hue: off</button><button id="redeal" type="button">Re-deal bed</button></div>
+	<div class="actions"><button id="viewToggle" type="button" aria-pressed="true">Temperature hue: on</button><button id="redeal" type="button">Re-deal bed</button></div>
 	<div class="actions"><button id="copySettings" type="button">Copy settings</button><button id="pasteSettings" type="button">Paste settings</button><button id="resetSettings" type="button">Defaults</button></div>
-	<small id="settingsEcho" class="echo">the copy button writes the whole scene as one JSON line</small>
+	<small id="settingsEcho" class="echo">copy writes the scene as JSON · paste reads the clipboard</small>
 	<div class="temp-key"><span>0 cold</span><i></i><span>1 hot</span></div>
 </aside>
 <div class="hint" id="hint">drag beads · click to add · <b>SPACE</b> splash · <b>R</b> re-deal</div>

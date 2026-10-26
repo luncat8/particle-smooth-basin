@@ -10,14 +10,6 @@ let assets = null;
 let dpr = 1;
 const sprites = buildSprites();
 const temperatureSprites = buildTemperatureSprites();
-const SCENARIO_PRESETS = {
-	shrinkFlow: [-1, 0],
-	bigFloats: [0, 4],
-	shrinkConvection: [-1, -4],
-	growConvection: [1, 4],
-	shrinkStable: [-1, 4],
-	growStable: [1, -4],
-};
 
 /* Optional stage timer: open with ?profile=1. The recorder itself is
    js/profile.js, so the page and tests.html measure the same way. */
@@ -62,6 +54,10 @@ const CONTROL_VIEWS = [
 	{ id: "massScale", out: "massValue", read: world => world.massScale, text: value => value.toFixed(2) + "×" },
 ];
 
+function markPresetCustom() {
+	$("scenarioPreset").value = "custom";
+}
+
 function syncPanel() {
 	for (const view of CONTROL_VIEWS) {
 		const value = view.read(world);
@@ -79,8 +75,9 @@ function setEcho(text, tone) {
 	echo.className = "echo" + (tone ? " " + tone : "");
 }
 
-function applyAndDeal(settings) {
+function applyAndDeal(settings, presetName) {
 	const ignored = applySettings(world, settings);
+	$("scenarioPreset").value = presetName || "custom";
 	spawnBed(world);
 	assets = makeAssets(ctx, world);
 	assets.sprites = sprites;
@@ -124,20 +121,43 @@ function legacyCopy(text, done) {
 }
 
 function pasteSettings() {
-	const input = window.prompt("Paste a settings line", "");
-	if (!input) return null;
-	let parsed = null;
+	const clipboard = typeof navigator !== "undefined" ? navigator.clipboard : null;
+	if (!clipboard || !clipboard.readText) {
+		setEcho("clipboard read unavailable — allow clipboard access in this browser", "bad");
+		return null;
+	}
+	const button = $("pasteSettings");
+	button.textContent = "Reading clipboard…";
+	let reading;
 	try {
-		parsed = JSON.parse(input);
+		reading = clipboard.readText();
 	} catch (error) {
-		setEcho("not JSON: " + (error && error.message ? error.message : error), "bad");
+		button.textContent = "Paste settings";
+		setEcho("clipboard read blocked — allow clipboard access and try again", "bad");
 		return null;
 	}
-	if (!parsed || typeof parsed !== "object") {
-		setEcho("settings must be a JSON object like {\"fill\":0.21,\"water\":0.3}", "bad");
-		return null;
-	}
-	return applyAndDeal(parsed);
+	return Promise.resolve(reading).then(text => {
+		button.textContent = "Paste settings";
+		if (!text.trim()) {
+			setEcho("clipboard is empty", "bad");
+			return;
+		}
+		let parsed = null;
+		try {
+			parsed = JSON.parse(text);
+		} catch (error) {
+			setEcho("not JSON: " + (error && error.message ? error.message : error), "bad");
+			return;
+		}
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+			setEcho("settings must be a JSON object like {\"fill\":0.4,\"water\":0.3}", "bad");
+			return;
+		}
+		applyAndDeal(parsed);
+	}, () => {
+		button.textContent = "Paste settings";
+		setEcho("clipboard read blocked — allow clipboard access and try again", "bad");
+	});
 }
 
 function syncSizeControl(value) {
@@ -189,8 +209,8 @@ function updateStats() {
 }
 
 fit();
-applyAndDeal(SETTINGS);
-setEcho("copy settings writes one JSON line · paste applies one", "");
+applyAndDeal(SETTINGS, "convectionThermal");
+setEcho("copy writes one JSON line · paste reads and applies clipboard", "");
 
 let resizeTimer = 0;
 window.addEventListener("resize", () => {
@@ -228,41 +248,49 @@ canvas.addEventListener("pointerleave", () => { if (!world.pointer.down) canvas.
 canvas.addEventListener("contextmenu", e => e.preventDefault());
 
 $("coldZoneEnd").addEventListener("input", e => {
+	markPresetCustom();
 	setColdZoneEnd(world, Number(e.target.value) / 100);
 	$("coldZoneValue").textContent = e.target.value + "%";
 });
 
 $("hotZoneStart").addEventListener("input", e => {
+	markPresetCustom();
 	setHotZoneStart(world, Number(e.target.value) / 100);
 	$("hotZoneValue").textContent = e.target.value + "%";
 });
 
 $("coldPower").addEventListener("input", e => {
+	markPresetCustom();
 	setColdPower(world, Number(e.target.value));
 	$("coldPowerValue").textContent = Number(e.target.value).toFixed(2) + "×";
 });
 
 $("hotPower").addEventListener("input", e => {
+	markPresetCustom();
 	setHotPower(world, Number(e.target.value));
 	$("hotPowerValue").textContent = Number(e.target.value).toFixed(2) + "×";
 });
 
 $("thermalLift").addEventListener("input", e => {
+	markPresetCustom();
 	setThermalLift(world, Number(e.target.value));
 	$("liftValue").textContent = Number(e.target.value).toFixed(2);
 });
 
 $("bondStrength").addEventListener("input", e => {
+	markPresetCustom();
 	setBondStrength(world, Number(e.target.value));
 	$("bondStrengthValue").textContent = Number(e.target.value).toFixed(2);
 });
 
 $("bondTempExp").addEventListener("input", e => {
+	markPresetCustom();
 	setBondTempExp(world, Number(e.target.value));
 	$("bondTempValue").textContent = Number(e.target.value).toFixed(1);
 });
 
 $("waterFrac").addEventListener("input", e => {
+	markPresetCustom();
 	setWaterFrac(world, Number(e.target.value) / 100);
 	$("waterValue").textContent = e.target.value + "%";
 	assets = makeAssets(ctx, world);	// the water gradients are geometry-bound
@@ -271,6 +299,7 @@ $("waterFrac").addEventListener("input", e => {
 });
 
 $("conductionRate").addEventListener("input", e => {
+	markPresetCustom();
 	const value = Number(e.target.value);
 	setConductionRate(world, value);
 	$("conductionValue").textContent = value.toFixed(2) + "×";
@@ -278,15 +307,16 @@ $("conductionRate").addEventListener("input", e => {
 
 $("sizeResponse").addEventListener("input", e => {
 	syncSizeControl(Number(e.target.value));
-	$("scenarioPreset").value = "custom";
+	markPresetCustom();
 });
 
 $("archSize").addEventListener("input", e => {
 	syncArchControl(Number(e.target.value));
-	$("scenarioPreset").value = "custom";
+	markPresetCustom();
 });
 
 $("buoyancy").addEventListener("input", e => {
+	markPresetCustom();
 	const value = Number(e.target.value);
 	setBuoyancy(world, value);
 	$("buoyancyValue").textContent = value.toFixed(2) + "×";
@@ -294,22 +324,23 @@ $("buoyancy").addEventListener("input", e => {
 
 $("scenarioPreset").addEventListener("change", e => {
 	const preset = SCENARIO_PRESETS[e.target.value];
-	if (!preset) return;
-	syncSizeControl(preset[0]);
-	syncArchControl(preset[1]);
+	if (preset) applyAndDeal(preset, e.target.value);
 });
 
 $("fillFraction").addEventListener("input", e => {
+	markPresetCustom();
 	$("fillValue").textContent = e.target.value + "%";
 	updateCountLabel();
 });
 
 $("typicalRadius").addEventListener("input", e => {
+	markPresetCustom();
 	$("radiusValue").textContent = e.target.value + " px";
 	updateCountLabel();
 });
 
 $("massScale").addEventListener("input", e => {
+	markPresetCustom();
 	const value = Number(e.target.value);
 	setMassScale(world, value);
 	$("massValue").textContent = value.toFixed(2) + "×";
@@ -327,11 +358,12 @@ $("fillFraction").addEventListener("change", redealFromControls);
 
 $("copySettings").addEventListener("click", copySettings);
 $("pasteSettings").addEventListener("click", pasteSettings);
-$("resetSettings").addEventListener("click", () => applyAndDeal(SETTINGS));
+$("resetSettings").addEventListener("click", () => applyAndDeal(SETTINGS, "convectionThermal"));
 $("typicalRadius").addEventListener("change", redealFromControls);
 $("redeal").addEventListener("click", redealFromControls);
 
 $("viewToggle").addEventListener("click", () => {
+	markPresetCustom();
 	world.temperatureView = !world.temperatureView;
 	syncPanel();
 });

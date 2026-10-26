@@ -7,15 +7,16 @@
 const TAU = Math.PI * 2;
 
 const WATER_FRAC = 0.30;		// waterline share of screen height: a water column above the bed
-const DEFAULT_FILL = 0.21;	// canvas coverage: a bed that leaves room to convect
+const DEFAULT_FILL = 0.40;	// canvas coverage: a bed that leaves room to convect
 const DEFAULT_RADIUS = 14;
-const DEFAULT_SIZE = -0.35;	// hot shrinks: with a negative arch size, hot beads rise
-const DEFAULT_ARCH = -2.5;
+const DEFAULT_SIZE = -1;	// hot shrinks: with a negative arch size, hot beads rise
+const DEFAULT_ARCH = -10;
 const SIZE_FACTOR_MAX = 1.28;	// upper bound on bead r/rBar; pair-grid cell size assumes it
 const SPAWN_CAP = 1500;
 const RHO_WATER = 1;
 const ARCH_LIFT_LIMIT = 8;
-const ARCH_SIZE_RANGE = 10;
+const ARCH_SIZE_MIN = -10;
+const ARCH_SIZE_MAX = 2;
 const DRAG_AIR = 0.05;		// 1/s
 const DRAG_WATER = 2.7;		// 1/s, scaled by submerged fraction^2
 const SUBSTEP = 1 / 120;
@@ -27,21 +28,18 @@ const CONTACT_DAMP = 1;		// 0..1 inelasticity of touching pairs (hydrogel: no bo
 const LINK_CREATE_RATIO = 1.08;	// bond creation distance / sum of radii
 const LINK_HEAT_MAX = 0.55;	// bonds only form below this pair mean temperature
 const LINK_HEAT_RAMP = 0.40;	// stiffness falls to zero over this span below the ceiling
-const LINK_STRENGTH = 0.72;	// stiffness at zero temperature (times the ramp^exponent)
-const LINK_TEMP_EXP = 2;		// how sharply strength falls with temperature
-const THERMAL_LIFT = 0.40;	// hot beads are this much lighter than cold ones (0..1)
-const COLD_POWER = 2.5;		// shipped zone rates (the sliders' defaults)
-const HOT_POWER = 2.5;
+const LINK_STRENGTH = 0.40;	// stiffness at zero temperature (times the ramp^exponent)
+const LINK_TEMP_EXP = 2.5;	// how sharply strength falls with temperature
+const THERMAL_LIFT = 0.30;	// hot beads are this much lighter than cold ones (0..1)
+const COLD_POWER = 0.7;		// shipped zone rates (the sliders' defaults)
+const HOT_POWER = 2;
 const LINK_ACTIVE_K = 0.02;	// weaker bonds keep their rest but skip the constraint solver
 const MAX_SPEED = 1600;		// px/s
 const WAVE_REACT = 22;		// px/s per ripple kick unit: reaction impulse on the bead
-/* The bands are placed for the shipped bed, and they are also what render.js draws,
-   so the gradient on screen is the band the physics uses. The cold band has to reach
-   the top of the bed (the raft floating on the waterline bonds there) and the hot band
-   has to touch the floor: measured in experiments/balance.js, a hot band starting at
-   0.84 instead of 0.78 halves the number of hot beads rising past the bed mid-line. */
-const COLD_ZONE_END = 0.56;	// share of H cooled from the top, and drawn as the cold gradient
-const HOT_ZONE_START = 0.78;	// share of H where the heated bottom band starts
+/* The bands are shared with render.js, so the visible gradients match the thermal
+   zones applied by the solver. */
+const COLD_ZONE_END = 0.30;	// share of H cooled from the top, and drawn as the cold gradient
+const HOT_ZONE_START = 0.75;	// share of H where the heated bottom band starts
 const PAL_LIGHT = 6;		// sprite palette: 0..5 light beads, 6..11 deep
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -57,11 +55,11 @@ function createWorld(W, H) {
 		grav: 1850,			// px/s^2, rescaled with screen height
 		rBar: DEFAULT_RADIUS, rMax: 24,
 		fillFraction: DEFAULT_FILL, typicalRadius: DEFAULT_RADIUS, massScale: 1,
-		sourceRate: 1, conductionRate: 1, sizeResponse: DEFAULT_SIZE, archSize: DEFAULT_ARCH, buoyancy: 1, thermalLift: THERMAL_LIFT,
+		sourceRate: 1, conductionRate: 0.25, sizeResponse: DEFAULT_SIZE, archSize: DEFAULT_ARCH, buoyancy: 0.2, thermalLift: THERMAL_LIFT,
 		coldZoneEnd: COLD_ZONE_END, hotZoneStart: HOT_ZONE_START,
 		coldPower: COLD_POWER, hotPower: HOT_POWER,
 		linkStrength: LINK_STRENGTH, linkTempExp: LINK_TEMP_EXP, linkHeatMax: LINK_HEAT_MAX,
-		temperatureView: false,
+		temperatureView: true,
 		n: 0, cap,
 		x: new Float64Array(cap), y: new Float64Array(cap),
 		px: new Float64Array(cap), py: new Float64Array(cap),
@@ -261,7 +259,7 @@ function setSizeResponse(world, value) {
 }
 
 function setArchSize(world, value) {
-	world.archSize = clamp(value, -ARCH_SIZE_RANGE, ARCH_SIZE_RANGE);
+	world.archSize = clamp(value, ARCH_SIZE_MIN, ARCH_SIZE_MAX);
 }
 
 function setColdZoneEnd(world, value) {
@@ -281,7 +279,7 @@ function setHotPower(world, value) {
 }
 
 function setBondStrength(world, value) {
-	world.linkStrength = clamp(value, 0, 1.5);
+	world.linkStrength = clamp(value, 0.2, 1);
 }
 
 function setBondTempExp(world, value) {
@@ -797,24 +795,29 @@ function pointerUp(world, now) {
    pasting it back (or into another window) is exact. Keys are short on purpose: this
    string gets pasted into chat. `readSettings` rounds, `applySettings` clamps through
    the same setters the sliders use. */
-const SETTINGS = {
-	fill: DEFAULT_FILL,
-	radius: DEFAULT_RADIUS,
-	water: WATER_FRAC,
-	coldEnd: COLD_ZONE_END,
-	hotStart: HOT_ZONE_START,
-	coldPower: COLD_POWER,
-	hotPower: HOT_POWER,
-	lift: THERMAL_LIFT,
-	bonds: LINK_STRENGTH,
-	bondTemp: LINK_TEMP_EXP,
-	conduction: 1,
-	size: DEFAULT_SIZE,
-	arch: DEFAULT_ARCH,
-	buoyancy: 1,
-	mass: 1,
-	tempView: false,
+const SCENARIO_PRESETS = {
+	convectionThermal: {
+		fill: 0.4, radius: 14, water: 0.3, coldEnd: 0.3, hotStart: 0.75,
+		coldPower: 0.7, hotPower: 2, lift: 0.3, bonds: 0.4, bondTemp: 2.5,
+		conduction: 0.25, size: -1, arch: -10, buoyancy: 0.2, mass: 1, tempView: true,
+	},
+	convectionHeat: {
+		fill: 0.3, radius: 14, water: 0.3, coldEnd: 0.3, hotStart: 0.75,
+		coldPower: 1, hotPower: 2, lift: 0.8, bonds: 0.4, bondTemp: 2.5,
+		conduction: 0.1, size: -1, arch: -4, buoyancy: 0.55, mass: 1, tempView: true,
+	},
+	convectionThermalGrow: {
+		fill: 0.4, radius: 14, water: 0.3, coldEnd: 0.4, hotStart: 0.75,
+		coldPower: 1, hotPower: 2, lift: 0.5, bonds: 0.5, bondTemp: 2, conduction: 1,
+		size: 1, arch: 2, buoyancy: 0.85, mass: 1, tempView: true,
+	},
+	convectionBalanced: {
+		fill: 0.56, radius: 14, water: 0.3, coldEnd: 0.4, hotStart: 0.75,
+		coldPower: 1, hotPower: 2, lift: 0.7, bonds: 0.9, bondTemp: 1.5, conduction: 1.9,
+		size: -1, arch: -5, buoyancy: 0.3, mass: 1, tempView: true,
+	},
 };
+const SETTINGS = SCENARIO_PRESETS.convectionThermal;
 
 const round = (value, digits) => Number(Number(value).toFixed(digits));
 
@@ -873,7 +876,7 @@ if (typeof module !== "undefined" && module.exports) {
 		setTypicalRadius, setFillFraction, setMassScale, setWaterFrac,
 		setColdZoneEnd, setHotZoneStart, setColdPower, setHotPower, setThermalLift,
 		setBondStrength, setBondTempExp,
-		SETTINGS, readSettings, applySettings,
+		SETTINGS, SCENARIO_PRESETS, readSettings, applySettings,
 		disturb, pickBead, pointerMove, pointerDown, pointerUp,
 		SPAWN_CAP, WATER_FRAC, DEFAULT_FILL, DEFAULT_RADIUS, SUBSTEP,
 		COLD_ZONE_END, HOT_ZONE_START, LINK_HEAT_MAX, LINK_STRENGTH, LINK_TEMP_EXP, THERMAL_LIFT,

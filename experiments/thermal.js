@@ -23,7 +23,7 @@ function placePair(world, y, distance) {
 
 const world = eng.createWorld(640, 480);
 assert.equal(world.sourceRate, 1, "thermal source rate defaults to 1x");
-assert.equal(world.conductionRate, 1, "conduction rate defaults to 1x");
+assert.equal(world.conductionRate, eng.SETTINGS.conduction, "conduction rate defaults to the shipped preset");
 eng.setSourceRate(world, 0);
 eng.setConductionRate(world, 0);
 placePair(world, 70, 25);
@@ -72,7 +72,8 @@ assert.ok(Math.abs(world.r[0] / world.r[1] - 2) < 1e-6, "negative thermal respon
 const arch = eng.createWorld(640, 480);
 assert.equal(arch.archSize, eng.SETTINGS.arch, "the settings table carries the world's shipped coupling");
 eng.setArchSize(arch, 0);	// the checks below want the coupling out of the way
-assert.equal(arch.buoyancy, 1, "buoyancy strength defaults to 1x");
+assert.equal(arch.buoyancy, eng.SETTINGS.buoyancy, "buoyancy strength defaults to the shipped preset");
+eng.setBuoyancy(arch, 1);
 eng.setSourceRate(arch, 0);
 eng.setConductionRate(arch, 0);
 eng.setSizeResponse(arch, 0);
@@ -100,17 +101,16 @@ eng.setArchSize(arch, -1);
 eng.substep(arch, eng.SUBSTEP);
 assert.ok(arch.vy[1] > 2, "negative coupling makes the double-radius bead sink");
 arch.vx[0] = arch.vy[0] = arch.vx[1] = arch.vy[1] = 0;
-eng.setArchSize(arch, 10);
+arch.archSize = 10;	// stress the bounded force beyond the rescaled slider range
 eng.substep(arch, eng.SUBSTEP);
-assert.ok(arch.vy[1] < -70 && Number.isFinite(arch.vy[1]), "maximum coupling gives strong but bounded lift");
-assert.equal(arch.archSize, 10, "positive archimedes-size range reaches +10");
+assert.ok(arch.vy[1] < -70 && Number.isFinite(arch.vy[1]), "large coupling gives strong but bounded lift");
 arch.vx[0] = arch.vy[0] = arch.vx[1] = arch.vy[1] = 0;
 eng.setArchSize(arch, -10);
 eng.substep(arch, eng.SUBSTEP);
 assert.ok(arch.vy[1] > 8 && Number.isFinite(arch.vy[1]), "minimum coupling gives strong but bounded sinking");
 assert.equal(arch.archSize, -10, "negative archimedes-size range reaches -10");
 eng.setArchSize(arch, 20);
-assert.equal(arch.archSize, 10, "archimedes-size coupling clamps to +10");
+assert.equal(arch.archSize, 2, "archimedes-size coupling clamps to the rescaled +2 control maximum");
 eng.setArchSize(arch, -20);
 assert.equal(arch.archSize, -10, "archimedes-size coupling clamps to -10");
 eng.setBuoyancy(arch, -1);
@@ -144,6 +144,9 @@ assert.equal(bonded.linkN, 0, "separated cold beads do not retain a long-range b
 
 // Hovering must not stir; only a held pointer applies the brush force.
 const hover = eng.createWorld(640, 480);
+eng.setBuoyancy(hover, 1);
+eng.setArchSize(hover, 0);
+eng.setSizeResponse(hover, 0);
 eng.setSourceRate(hover, 0);
 eng.setConductionRate(hover, 0);
 hover.n = 1;
