@@ -1,6 +1,7 @@
 
 ## TODO
 
+v0.6? plan port to webGPU to be able switch or separate html with similar GUI
 
 ## done:
 
