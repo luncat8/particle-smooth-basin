@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Hydrogel Basin — browser tests</title>
+<style>
+	html,body{margin:0;padding:0;background:#0b1418;color:#cfe6ec;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+	body{padding:14px 16px 28px;max-width:1180px}
+	h1{margin:0;font-size:13px;letter-spacing:.24em;color:#9fd8e8;font-weight:700}
+	p.sub{margin:6px 0 12px;max-width:96ch;font-size:11px;color:rgba(170,215,230,.62)}
+	code{background:rgba(159,216,232,.10);padding:1px 5px;border-radius:3px;color:#bfe9f0}
+	.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px}
+	button{padding:6px 12px;border:1px solid rgba(159,216,232,.3);background:rgba(91,163,177,.13);color:#c6ecf1;font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.08em;cursor:pointer;border-radius:4px}
+	button:hover:not(:disabled){background:rgba(91,190,200,.26);border-color:rgba(159,216,232,.6)}
+	button:disabled{opacity:.4;cursor:default}
+	button.saved,button.saved:disabled{border-color:rgba(127,214,164,.6);background:rgba(127,214,164,.16);color:#9ef0c0;opacity:1;cursor:default}
+	button.copied{border-color:rgba(120,213,219,.6);background:rgba(120,213,219,.16);color:#a9e2e8}
+	label.auto{display:flex;gap:6px;align-items:center;font-size:10px;color:rgba(170,215,230,.6)}
+	#status{margin:0 0 10px;padding:5px 9px;border-left:2px solid #78d5db;background:rgba(120,213,219,.08);font-size:10px;letter-spacing:.06em;color:#a9e2e8;min-height:16px}
+	#status.bad{border-color:#e07070;background:rgba(224,112,112,.10);color:#f3b6b6}
+	#status.ok{border-color:#7fd6a4;background:rgba(127,214,164,.10);color:#9ef0c0}
+	#env{font-size:10px;color:rgba(170,215,230,.55);margin:0 0 10px;word-break:break-word}
+	.stage{overflow:hidden;margin:0 0 12px;border:1px solid rgba(159,216,232,.16);border-radius:5px;background:#0e1a20;max-width:100%}
+	canvas{display:block;transform-origin:top left}
+	table{width:100%;border-collapse:collapse;font-size:10.5px;margin:0 0 12px}
+	th,td{text-align:left;padding:3px 7px;border-bottom:1px solid rgba(159,216,232,.1);white-space:nowrap}
+	th{color:rgba(170,215,230,.55);font-weight:600;letter-spacing:.06em}
+	td.num{font-variant-numeric:tabular-nums}
+	td.ok{color:#7fd6a4}
+	td.bad{color:#e07070}
+	#checks{list-style:none;margin:0 0 12px;padding:0;font-size:10.5px}
+	#checks li{padding:2px 0;color:rgba(200,230,238,.8)}
+	#checks b.ok{color:#7fd6a4;font-weight:600}
+	#checks b.bad{color:#e07070;font-weight:600}
+	h2{font-size:10px;letter-spacing:.18em;color:rgba(159,216,232,.6);margin:14px 0 6px;font-weight:600}
+	pre#out{white-space:pre-wrap;word-break:break-word;background:#0b0e15;border:1px solid #263043;padding:10px;max-height:46vh;overflow:auto;font-size:10.5px;margin:0}
+</style>
+</head>
+<body>
+<h1>HYDROGEL BASIN · BROWSER TESTS</h1>
+<p class="sub">Same <code>js/engine.js</code> + <code>js/render.js</code> as <code>index.html</code>, driven here without the HUD.
+Checks are correctness, <code>perf</code> cases time <code>stepWorld</code> + <code>render</code> with <code>performance.now()</code> exactly like
+<code>index.html?profile=1</code>. The environment line classifies the GPU (hardware versus SwiftShader/llvmpipe) and the <code>rAF p95</code>
+column is where raster and compositor cost appear; there is no WebGPU path in this project yet, so no GPU-versus-CPU parity case exists.
+Start <code>run_tests.py</code> for one log that holds the node checks and this browser section, served with COOP/COEP headers so timers
+are not coarsened. Keep this tab visible: a background tab throttles frames.</p>
+<div class="toolbar">
+	<button id="run" type="button">Run all</button>
+	<button id="quick" type="button">Quick</button>
+	<button id="stop" type="button" disabled>Stop</button>
+	<button id="save" type="button">Save log</button>
+	<button id="copy" type="button">Copy log</button>
+	<label class="auto"><input id="auto" type="checkbox" checked/> save each run to experiments/logs</label>
+</div>
+<div id="status">booting…</div>
+<p id="env"></p>
+<div class="stage" id="stage"><canvas id="c" width="640" height="400"></canvas></div>
+<h2>checks</h2>
+<ul id="checks"></ul>
+<h2>frame profile (budget 16.7 ms)</h2>
+<table>
+	<thead><tr><th>case</th><th>beads</th><th>dpr</th><th>view</th><th>frame p50</th><th>frame p95</th><th>sim p95</th><th>render p95</th><th>rAF p95</th><th>result</th></tr></thead>
+	<tbody id="rows"></tbody>
+</table>
+<h2>log</h2>
+<pre id="out"></pre>
+<script src="js/engine.js"></script>
+<script src="js/render.js"></script>
+<script src="js/profile.js"></script>
+<script>
+"use strict";
+
+var $ = function (id) { return document.getElementById(id); };
+var canvas = $("c");
+var ctx = canvas.getContext("2d", { alpha: false });
+var stageEl = $("stage"), outEl = $("out"), rowsEl = $("rows"), checksEl = $("checks"), envEl = $("env");
+var LOG = [];
+var BUSY = false;
+var STOPPED = false;
+var VERDICT = "";
+var LAST_CHECKS = null;		// kept so a second matrix run can skip re-running the checks
+var SAVED_TEXT = "";		// the exact log text that is already in the run log
+var SAVED_PATH = "";
+var SAVING = false;
+var COPY_TIMER = 0;
+
+var VIEW_W = 1280, VIEW_H = 800;
+var BUDGET_MS = 16.7;
+
+/* three scene weights and three draw variants: the matrix 0.3-plan.md asks for */
+var SIZES = {
+	light: { id: "light", fill: 0.42, radius: 21 },
+	default: { id: "default", fill: 0.50, radius: 14 },
+	cap: { id: "cap", fill: 0.70, radius: 10 },
+};
+var VARIANTS = {
+	dpr1: { id: "dpr1", dpr: 1, temp: false },
+	dpr2: { id: "dpr2", dpr: 2, temp: false },
+	"dpr1-temp": { id: "dpr1-temp", dpr: 1, temp: true },
+};
+var PROFILES = {
+	full: { warm: 45, measure: 150, sizes: ["light", "default", "cap"], variants: ["dpr1", "dpr2", "dpr1-temp"], extras: true },
+	quick: { warm: 20, measure: 90, sizes: ["default"], variants: ["dpr1", "dpr2"], extras: false },
+};
+/* cold/high-link preset and a stirred near-cap scene: the two interaction cases */
+var PRESET_CASE = { id: "cold-links", fill: 0.50, radius: 14, dpr: 1, temp: false, preset: [-1, -4], rates: [2, 2], warm: 240, measure: 150 };
+var STIR_CASE = { id: "stirred-cap", fill: 0.70, radius: 10, dpr: 1, temp: false, interaction: true, warm: 60, measure: 120 };
+
+/* ---------------------------- log + status ---------------------------- */
+
+function say(line) {
+	LOG.push(line);
+	outEl.textContent = LOG.join("\n");
+	outEl.scrollTop = outEl.scrollHeight;
+	console.log(line);
+	refreshSave();		// new content: the previous save no longer covers this log
+}
+
+function setStatus(text, tone) {
+	$("status").textContent = text;
+	$("status").className = tone || "";
+}
+
+/* the runner passes ?version= so a downloaded log carries the same prefix as the run log */
+function versionFromQuery() {
+	var match = searchString().match(/[?&]version=([^&]+)/);
+	return match ? decodeURIComponent(match[1]) : "dev";
+}
+
+var VERSION = versionFromQuery();
+
+function fileStamp() {
+	var d = new Date(), pad = function (n) { return (n < 10 ? "0" : "") + n; };
+	return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "-"
+		+ pad(d.getHours()) + "-" + pad(d.getMinutes()) + "-" + pad(d.getSeconds());
+}
+
+function stamp() {
+	var d = new Date(), pad = function (n) { return (n < 10 ? "0" : "") + n; };
+	return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+}
+
+function searchString() {
+	if (typeof location !== "undefined" && location.search !== undefined) return location.search;
+	return window.location && window.location.search ? window.location.search : "";
+}
+
+/* ---------------------------- environment ---------------------------- */
+
+function versionIn(text, pattern) {
+	var match = text.match(pattern);
+	return match ? match[1] : "";
+}
+
+function browserName() {
+	var ua = (typeof navigator !== "undefined" && navigator.userAgent) || "";
+	if (/Edg\//.test(ua)) return "edge " + versionIn(ua, /Edg\/(\d+)/);
+	if (/OPR\//.test(ua)) return "opera " + versionIn(ua, /OPR\/(\d+)/);
+	if (/Firefox\//.test(ua)) return "firefox " + versionIn(ua, /Firefox\/(\d+)/);
+	if (/Chrome\//.test(ua)) return "chrome " + versionIn(ua, /Chrome\/(\d+)/);
+	if (/Version\//.test(ua) && /Safari\//.test(ua)) return "safari " + versionIn(ua, /Version\/(\d+)/);
+	return "browser";
+}
+
+function osArch() {
+	var text = ((typeof navigator !== "undefined" && (navigator.userAgent + " " + navigator.platform)) || "");
+	var os = /Windows|Win32|Win64/.test(text) ? "win" : /Macintosh|Mac/.test(text) ? "mac" : /Android|Linux|X11|CrOS/.test(text) ? "linux" : "os";
+	var arch = /aarch64|arm64|ARM64/.test(text) ? "arm64" : "x86_64";
+	return os + " " + arch;
+}
+
+/* one word for the GPU class: enough to tell a measurement from a software raster */
+function gpuClass(text) {
+	var word = String(text || "").toLowerCase();
+	if (word.indexOf("swiftshader") >= 0) return "swiftshader";
+	if (word.indexOf("llvmpipe") >= 0 || word.indexOf("software") >= 0) return "software";
+	if (word.indexOf("nvidia") >= 0) return "nvidia";
+	if (word.indexOf("amd") >= 0 || word.indexOf("radeon") >= 0) return "amd";
+	if (word.indexOf("intel") >= 0) return "intel";
+	if (word.indexOf("apple") >= 0) return "apple";
+	if (word.indexOf("angle") >= 0) return "angle";
+	return "unknown";
+}
+
+function gpuName() {
+	try {
+		var probe = document.createElement("canvas");
+		var gl = probe.getContext("webgl2") || probe.getContext("webgl");
+		if (!gl) return "no-webgl";
+		var info = gl.getExtension("WEBGL_debug_renderer_info");
+		return gpuClass(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+	} catch (error) {
+		return "probe-failed";
+	}
+}
+
+async function webgpuName() {
+	if (typeof navigator === "undefined" || !navigator.gpu) return "none";
+	try {
+		var adapter = await navigator.gpu.requestAdapter();
+		if (!adapter) return "no-adapter";
+		var info = adapter.info || {};
+		return gpuClass([info.vendor, info.architecture, info.description].join(" "));
+	} catch (error) {
+		return "error";
+	}
+}
+
+/* smallest performance.now() step: 5 us when cross-origin isolated, 100 us otherwise */
+function timerTickMicros() {
+	var best = Infinity, last = performance.now();
+	for (var i = 0; i < 100000; i++) {
+		var t = performance.now();
+		if (t === last) continue;
+		var delta = t - last;
+		if (delta > 0 && delta < best) best = delta;
+		last = t;
+	}
+	return best === Infinity ? NaN : best * 1000;
+}
+
+var ENV_LINE = "";
+
+async function envLine() {
+	var isolated = typeof crossOriginIsolated !== "undefined" ? crossOriginIsolated : !!(typeof self !== "undefined" && self.crossOriginIsolated);
+	var parts = [
+		browserName(),
+		osArch(),
+		"dpr " + ((typeof window !== "undefined" && window.devicePixelRatio) || 1),
+		"hw " + ((typeof navigator !== "undefined" && navigator.hardwareConcurrency) || "?"),
+		"gpu " + gpuName(),
+		"webgpu " + (await webgpuName()),
+		"isolated " + (isolated ? "yes" : "no"),
+		"timer " + timerTickMicros().toFixed(1) + " us",
+	];
+	ENV_LINE = parts.join(" · ");
+	envEl.textContent = ENV_LINE;
+	return ENV_LINE;
+}
+
+/* ---------------------------- checks ---------------------------- */
+
+var SPRITES = null, TEMP_SPRITES = null;
+
+/* render.js leaves sprite arrays to the caller (app.js attaches the prebuilt ones) */
+function sceneAssets(world) {
+	if (!SPRITES) {
+		SPRITES = buildSprites();
+		TEMP_SPRITES = buildTemperatureSprites();
+	}
+	var assets = makeAssets(ctx, world);
+	assets.sprites = SPRITES;
+	assets.tempSprites = TEMP_SPRITES;
+	return assets;
+}
+
+function passed(detail) { return { ok: true, detail: detail }; }
+function failed(detail) { return { ok: false, detail: detail }; }
+
+function beadCountFor(world, W, H) {
+	return Math.round(world.fillFraction * W * H / (Math.PI * 1.027 * world.rBar * world.rBar));
+}
+
+function checkBoot() {
+	var world = createWorld(VIEW_W, VIEW_H);
+	var expected = Math.min(world.cap, beadCountFor(world, VIEW_W, VIEW_H));
+	if (Math.abs(world.n - expected) > 2) return failed("spawned " + world.n + " beads, coverage asks for " + expected);
+	if (!(world.wave.n > 50)) return failed("wave field has " + world.wave.n + " columns");
+	if (world.linkN !== 0) return failed("spawn left " + world.linkN + " links");
+	return passed("n=" + world.n + " · wave " + world.wave.n + " cols · tank " + Math.round(world.tank.x1 - world.tank.x0) + " px");
+}
+
+function readPixels(context, W, H) {
+	try {
+		var image = context.getImageData(0, 0, W, H);
+		return image && image.data && image.data.length === W * H * 4 ? image.data : null;
+	} catch (error) {
+		return null;
+	}
+}
+
+function checkCanvas() {
+	var W = 480, H = 320;
+	var world = createWorld(W, H);
+	canvas.width = W;
+	canvas.height = H;
+	ctx.setTransform(1, 0, 0, 1, 0, 0);
+	var assets = sceneAssets(world);
+	var n = world.n;
+	world.n = 0;
+	render(ctx, world, assets);
+	var empty = readPixels(ctx, W, H);
+	world.n = n;
+	render(ctx, world, assets);
+	var full = readPixels(ctx, W, H);
+	if (!empty || !full) return passed("pixel readback unavailable here — visual check skipped");
+	var changed = 0;
+	for (var i = 0; i < full.length; i += 4) {
+		if (full[i] !== empty[i] || full[i + 1] !== empty[i + 1] || full[i + 2] !== empty[i + 2]) changed++;
+	}
+	var share = changed / (W * H);
+	if (share < 0.01) return failed("beads repainted only " + (share * 100).toFixed(2) + "% of the canvas");
+	return passed("beads repaint " + (share * 100).toFixed(1) + "% of " + W + "x" + H + " pixels");
+}
+
+function invariantBreak(world) {
+	if (world.linkActiveN > world.linkN) return "linkActiveN " + world.linkActiveN + " > linkN " + world.linkN;
+	if (world.linkN > world.pairN) return "linkN " + world.linkN + " > pairN " + world.pairN;
+	if (world.pairN > world.pairA.length) return "pairN " + world.pairN + " > buffer " + world.pairA.length;
+	var t = world.tank;
+	for (var i = 0; i < world.n; i++) {
+		if (!isFinite(world.x[i]) || !isFinite(world.y[i]) || !isFinite(world.vx[i]) || !isFinite(world.vy[i]) || !isFinite(world.r[i])) return "non-finite state at bead " + i;
+		if (!(world.temp[i] >= 0 && world.temp[i] <= 1)) return "temperature " + world.temp[i] + " outside 0..1 at bead " + i;
+		if (world.x[i] < t.x0 - 40 || world.x[i] > t.x1 + 40) return "bead " + i + " crossed a side wall";
+		if (world.y[i] < -world.H * 0.5 || world.y[i] > t.y1 + 40) return "bead " + i + " escaped the basin";
+	}
+	return "";
+}
+
+function checkInvariants() {
+	var world = createWorld(VIEW_W, VIEW_H);
+	var peakPairs = 0, peakLinks = 0;
+	for (var f = 0; f < 120; f++) {
+		if (f === 40) splash(world);
+		if (f === 60) pointerDown(world, 520, 520, 0);
+		if (f > 60 && f < 70) pointerMove(world, 520 + f * 5, 500);
+		if (f === 70) pointerUp(world, 500);
+		stepWorld(world, 1 / 60);
+		if (world.pairN > peakPairs) peakPairs = world.pairN;
+		if (world.linkActiveN > peakLinks) peakLinks = world.linkActiveN;
+		var broken = invariantBreak(world);
+		if (broken) return failed("frame " + f + ": " + broken);
+	}
+	return passed("120 frames · peak pairs " + peakPairs + " / links " + peakLinks + " within " + world.pairA.length + " · no NaN");
+}
+
+function checkInteraction() {
+	var world = createWorld(VIEW_W, VIEW_H);
+	var t = world.tank;
+	var airX = -1, airY = -1;
+	for (var gy = 20; gy < VIEW_H - 20 && airX < 0; gy += 24) {
+		for (var gx = 20; gx < VIEW_W - 20; gx += 24) {
+			if (pickBead(world, gx, gy, 20) < 0) { airX = gx; airY = gy; break; }
+		}
+	}
+	if (airX < 0) return failed("no point in the view is free of beads, so a click cannot be isolated");
+	var before = world.n;
+	pointerDown(world, airX, airY, 0);
+	pointerUp(world, 100);
+	if (world.n !== before + 1) return failed("click added " + (world.n - before) + " beads instead of one");
+	var afterClick = world.n;
+	pointerDown(world, airX, airY, 0);
+	pointerUp(world, Infinity);
+	if (world.n !== afterClick) return failed("pointer cancel added a bead");
+	var target = -1;
+	for (var i = 0; i < world.n; i++) {
+		if (world.y[i] > world.waterY + 40 && (target < 0 || world.x[i] < world.x[target])) target = i;
+	}
+	if (target < 0) return failed("no bead below the waterline to grab");
+	var startX = world.x[target], startY = world.y[target];
+	pointerDown(world, startX, startY, 0);
+	var grabbed = world.pointer.grab;
+	if (grabbed < 0) return failed("pointer did not grab the bead under the cursor");
+	for (var f = 1; f <= 30; f++) {
+		pointerMove(world, startX + f * 6, startY - f * 2);
+		stepWorld(world, 1 / 60);
+	}
+	pointerUp(world, 1000);
+	var moved = Math.hypot(world.x[grabbed] - startX, world.y[grabbed] - startY);
+	if (moved < 8) return failed("held drag moved the bead " + moved.toFixed(1) + " px");
+	if (world.n !== afterClick) return failed("a held drag added a bead");
+	splash(world);
+	var height = 0;
+	for (var j = 0; j < world.wave.n; j++) height = Math.max(height, Math.abs(world.wave.h[j]));
+	if (height < 0.5) return failed("splash left the water line flat");
+	return passed("click +1 bead · cancel +0 · drag " + moved.toFixed(0) + " px · splash h " + height.toFixed(1));
+}
+
+function checkResize() {
+	var world = createWorld(VIEW_W, VIEW_H);
+	var n0 = world.n, dpr = 2;
+	canvas.width = Math.round(700 * dpr);
+	canvas.height = Math.round(420 * dpr);
+	ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+	resizeWorld(world, 700, 420);
+	if (canvas.width !== 1400 || canvas.height !== 840) return failed("backing store " + canvas.width + "x" + canvas.height);
+	var n1 = world.n;
+	if (!(n1 > 30 && n1 < n0)) return failed("re-deal gave " + n1 + " beads (was " + n0 + " at 1280x800)");
+	var assets = sceneAssets(world);
+	stepWorld(world, 1 / 60);
+	render(ctx, world, assets);
+	resizeWorld(world, VIEW_W, VIEW_H);
+	if (Math.abs(world.n - n0) > 2) return failed("restore gave " + world.n + " beads, expected " + n0);
+	return passed("700x420@2x → " + n1 + " beads, restored n=" + world.n + " at 1280x800");
+}
+
+function checkThermal() {
+	var world = createWorld(VIEW_W, VIEW_H);
+	setSourceRate(world, 4);
+	setConductionRate(world, 4);
+	setSizeResponse(world, 1);
+	for (var f = 0; f < 240; f++) stepWorld(world, 1 / 60);
+	var tMin = 1, tMax = 0, rMin = Infinity, rMax = 0, vMax = 0;
+	for (var i = 0; i < world.n; i++) {
+		tMin = Math.min(tMin, world.temp[i]);
+		tMax = Math.max(tMax, world.temp[i]);
+		rMin = Math.min(rMin, world.r[i]);
+		rMax = Math.max(rMax, world.r[i]);
+		vMax = Math.max(vMax, Math.hypot(world.vx[i], world.vy[i]));
+	}
+	if (tMax - tMin < 0.2) return failed("temperature spread " + (tMax - tMin).toFixed(2) + " stays flat at 4x sources");
+	var lo = world.rBar * 0.72 * Math.SQRT1_2 * 0.995;
+	var hi = world.rBar * 1.28 * Math.SQRT2 * 1.005;
+	if (rMin < lo || rMax > hi) return failed("radius " + rMin.toFixed(1) + "-" + rMax.toFixed(1) + " outside " + lo.toFixed(1) + "-" + hi.toFixed(1));
+	if (vMax > 1600 * 1.01) return failed("speed " + vMax.toFixed(0) + " px/s beyond the clamp");
+	/* hot beads must end up smaller with a negative response; baseSize is removed
+	   so the comparison is the thermal factor alone, not the random drawing */
+	setSizeResponse(world, -1);
+	for (var g = 0; g < 120; g++) stepWorld(world, 1 / 60);
+	var order = [];
+	for (var k = 0; k < world.n; k++) order.push(k);
+	order.sort(function (a, b) { return world.temp[a] - world.temp[b]; });
+	var q = Math.max(1, Math.floor(order.length * 0.2));
+	var coldSum = 0, hotSum = 0;
+	for (var m = 0; m < q; m++) {
+		coldSum += world.r[order[m]] / world.baseSize[order[m]];
+		hotSum += world.r[order[order.length - 1 - m]] / world.baseSize[order[order.length - 1 - m]];
+	}
+	if (hotSum >= coldSum) return failed("negative response did not shrink hot beads (" + (hotSum / q).toFixed(1) + " vs " + (coldSum / q).toFixed(1) + ")");
+	return passed("temp " + tMin.toFixed(2) + "-" + tMax.toFixed(2) + " · r " + rMin.toFixed(1) + "-" + rMax.toFixed(1) + " · hot/cold size " + (hotSum / q).toFixed(1) + "/" + (coldSum / q).toFixed(1));
+}
+
+function checkProfile() {
+	var profiler = createProfiler(5);
+	for (var i = 1; i <= 4; i++) if (profiler.record(i, i, i)) return failed("reported at " + i + " frames");
+	if (!profiler.record(5, 2, 3)) return failed("no report at frame 5");
+	var summary = profiler.summary();
+	if (summary.frames !== 5 || !(summary.frame.p95 >= summary.frame.p50)) return failed("summary " + JSON.stringify(summary));
+	if (!/^PROFILE 5F · FRAME p50 \d+\.\d\d p95 \d+\.\d\d · SIM p50 \d+\.\d\d p95 \d+\.\d\d · RENDER p50 \d+\.\d\d p95 \d+\.\d\d MS$/.test(profiler.line())) return failed("report line " + profiler.line());
+	if (profiler.record(9, 9, 9)) return failed("kept recording after the report");
+	var samples = createSamples(3);
+	samples.add(4);
+	samples.add(1);
+	samples.add(9);
+	var stats = samples.summary();
+	if (stats.p50 !== 4 || stats.p95 !== 9) return failed("sample percentiles " + JSON.stringify(stats));
+	return passed("one report at " + summary.frames + " frames · p50 " + summary.frame.p50.toFixed(2) + " p95 " + summary.frame.p95.toFixed(2));
+}
+
+var CHECKS = [
+	{ id: "boot", run: checkBoot },
+	{ id: "canvas", run: checkCanvas },
+	{ id: "invariants", run: checkInvariants },
+	{ id: "interaction", run: checkInteraction },
+	{ id: "resize", run: checkResize },
+	{ id: "thermal", run: checkThermal },
+	{ id: "profile", run: checkProfile },
+];
+
+function runChecks() {
+	var results = [];
+	checksEl.innerHTML = "";
+	for (var i = 0; i < CHECKS.length; i++) {
+		var entry = { id: CHECKS[i].id, ok: false, detail: "" };
+		try {
+			var outcome = CHECKS[i].run();
+			entry.ok = outcome.ok;
+			entry.detail = outcome.detail;
+		} catch (error) {
+			entry.detail = "threw " + (error && error.message ? error.message : error);
+		}
+		results.push(entry);
+		say("check " + entry.id + " " + (entry.ok ? "ok" : "FAILED") + " · " + entry.detail);
+		checksEl.innerHTML += "<li><b class=\"" + (entry.ok ? "ok" : "bad") + "\">" + (entry.ok ? "ok" : "fail") + "</b> " + entry.id + " · " + entry.detail + "</li>";
+	}
+	return results;
+}
+
+/* ---------------------------- perf cases ---------------------------- */
+
+function perfCases(profile) {
+	var spec = PROFILES[profile] || PROFILES.full;
+	var cases = [];
+	for (var i = 0; i < spec.sizes.length; i++) {
+		var size = SIZES[spec.sizes[i]];
+		for (var j = 0; j < spec.variants.length; j++) {
+			var variant = VARIANTS[spec.variants[j]];
+			cases.push({ id: size.id + " " + variant.id, fill: size.fill, radius: size.radius, dpr: variant.dpr, temp: variant.temp, warm: spec.warm, measure: spec.measure });
+		}
+	}
+	if (!spec.extras) return cases;
+	cases.push(copyCase(PRESET_CASE));
+	cases.push(copyCase(STIR_CASE));
+	return cases;
+}
+
+function copyCase(source) {
+	var copy = {};
+	for (var key in source) if (Object.prototype.hasOwnProperty.call(source, key)) copy[key] = source[key];
+	return copy;
+}
+
+function fitStage() {
+	var parent = canvas.parentNode;
+	var width = parent && parent.clientWidth ? parent.clientWidth : VIEW_W;
+	var scale = Math.min(1, width / VIEW_W);
+	canvas.style.width = VIEW_W + "px";
+	canvas.style.height = VIEW_H + "px";
+	canvas.style.transform = "scale(" + scale + ")";
+	stageEl.style.height = Math.round(VIEW_H * scale) + "px";
+}
+
+function resizeBackingStore(dpr) {
+	canvas.width = Math.round(VIEW_W * dpr);
+	canvas.height = Math.round(VIEW_H * dpr);
+	ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+	fitStage();
+}
+
+function addRow(row) {
+	var verdict = row.stopped ? "stopped" : row.frame.p95 <= BUDGET_MS ? "within budget" : "over budget";
+	var text = "<td>" + row.id + "</td>"
+		+ "<td class=\"num\">" + row.n + "</td>"
+		+ "<td class=\"num\">" + row.dpr + "</td>"
+		+ "<td>" + (row.view ? "temp" : "density") + "</td>"
+		+ "<td class=\"num\">" + row.frame.p50.toFixed(2) + "</td>"
+		+ "<td class=\"num\">" + row.frame.p95.toFixed(2) + "</td>"
+		+ "<td class=\"num\">" + row.sim.p95.toFixed(2) + "</td>"
+		+ "<td class=\"num\">" + row.render.p95.toFixed(2) + "</td>"
+		+ "<td class=\"num\">" + row.interval.p95.toFixed(2) + "</td>"
+		+ "<td class=\"" + (row.stopped ? "bad" : row.frame.p95 <= BUDGET_MS ? "ok" : "bad") + "\">" + verdict + "</td>";
+	var tr = document.createElement("tr");
+	tr.innerHTML = text;
+	rowsEl.appendChild(tr);
+}
+
+/* One case: build the scene, time stepWorld and render on requestAnimationFrame.
+   The rAF interval is recorded too — it is where a slow compositor shows up. */
+function runPerfCase(kase, options) {
+	var warm = options && options.warm !== undefined ? options.warm : kase.warm;
+	var measure = options && options.measure !== undefined ? options.measure : kase.measure;
+	return new Promise(function (resolve) {
+		var world = createWorld(VIEW_W, VIEW_H);
+		setFillFraction(world, kase.fill);
+		setTypicalRadius(world, kase.radius);
+		spawnBed(world);
+		if (kase.preset) {
+			setSizeResponse(world, kase.preset[0]);
+			setArchSize(world, kase.preset[1]);
+		}
+		if (kase.rates) {
+			setSourceRate(world, kase.rates[0]);
+			setConductionRate(world, kase.rates[1]);
+		}
+		world.temperatureView = !!kase.temp;
+		resizeBackingStore(kase.dpr);
+		var assets = sceneAssets(world);
+		var profiler = createProfiler(measure);
+		var intervals = createSamples(measure);
+		var index = 0, lastNow = 0;
+		var total = warm + measure;
+		var row = null;
+		if (kase.interaction) pointerDown(world, VIEW_W * 0.5, VIEW_H * 0.65, performance.now());
+
+		function emptyStats() { return { p50: 0, p95: 0 }; }
+
+		function finish(stopped) {
+			var summary = profiler.count
+				? profiler.summary()
+				: { frames: 0, frame: emptyStats(), sim: emptyStats(), render: emptyStats() };
+			row = {
+				id: kase.id, n: world.n, links: world.linkActiveN, dpr: kase.dpr, view: !!kase.temp,
+				stopped: !!stopped, frames: summary.frames,
+				frame: summary.frame, sim: summary.sim, render: summary.render,
+				interval: intervals.count ? intervals.summary() : emptyStats(),
+			};
+			addRow(row);
+			say("perf " + row.id + " · n=" + row.n + " links=" + row.links + " · frame p50 " + row.frame.p50.toFixed(2)
+				+ " p95 " + row.frame.p95.toFixed(2) + " · sim p95 " + row.sim.p95.toFixed(2)
+				+ " · render p95 " + row.render.p95.toFixed(2) + " · rAF p95 " + row.interval.p95.toFixed(2)
+				+ (row.stopped ? " · stopped" : row.frame.p95 <= BUDGET_MS ? "" : " · OVER " + BUDGET_MS + " ms"));
+			resolve(row);
+		}
+
+		function frame(now) {
+			if (STOPPED) {
+				if (kase.interaction) pointerUp(world, now);
+				finish(true);
+				return;
+			}
+			var interval = lastNow ? now - lastNow : 0;
+			lastNow = now;
+			if (kase.interaction) {
+				pointerMove(world, VIEW_W * (0.5 + 0.22 * Math.sin(index * 0.11)), VIEW_H * (0.65 + 0.12 * Math.cos(index * 0.09)));
+				if (index === 0) splash(world);
+			}
+			var t0 = performance.now();
+			stepWorld(world, 1 / 60);
+			var t1 = performance.now();
+			render(ctx, world, assets);
+			var t2 = performance.now();
+			var recorded = index >= warm;
+			if (recorded) {
+				profiler.record(t2 - t0, t1 - t0, t2 - t1);
+				if (interval > 0) intervals.add(interval);
+			}
+			if (++index >= total) {
+				if (kase.interaction) pointerUp(world, now);
+				finish(false);
+				return;
+			}
+			requestAnimationFrame(frame);
+		}
+
+		lastNow = 0;
+		requestAnimationFrame(frame);
+	});
+}
+
+async function runPerf(cases, options) {
+	var rows = [];
+	for (var i = 0; i < cases.length; i++) {
+		if (STOPPED) break;
+		setStatus("running " + cases[i].id + " (" + (i + 1) + "/" + cases.length + ")…");
+		rows.push(await runPerfCase(cases[i], options));
+		if (rows[rows.length - 1].stopped) break;
+	}
+	return rows;
+}
+
+/* ---------------------------- run + report ---------------------------- */
+
+function summarise(checks, rows) {
+	var checksPassed = 0, within = 0, worst = null, worstInterval = null;
+	for (var i = 0; i < checks.length; i++) if (checks[i].ok) checksPassed++;
+	for (var j = 0; j < rows.length; j++) {
+		if (rows[j].stopped) continue;
+		if (rows[j].frame.p95 <= BUDGET_MS) within++;
+		if (!worst || rows[j].frame.p95 > worst.frame.p95) worst = rows[j];
+		if (!worstInterval || rows[j].interval.p95 > worstInterval.interval.p95) worstInterval = rows[j];
+	}
+	var measured = rows.filter(function (row) { return !row.stopped; }).length;
+	var ok = checksPassed === checks.length && within === measured && measured > 0;
+	return {
+		ok: ok,
+		checks: checksPassed + "/" + checks.length,
+		perf: within + "/" + measured,
+		worst: worst,
+		line: "RESULT " + (ok ? "pass" : "fail") + " · checks " + checksPassed + "/" + checks.length
+			+ " · perf " + within + "/" + measured + " within " + BUDGET_MS + " ms"
+			+ (worst ? " · worst p95 " + worst.frame.p95.toFixed(2) + " ms (" + worst.id + ")" : "")
+			+ (worstInterval ? " · worst rAF " + worstInterval.interval.p95.toFixed(2) + " ms (" + worstInterval.id + ")" : ""),
+	};
+}
+
+async function run(profileName, overrides) {
+	if (BUSY) return null;
+	BUSY = true;
+	STOPPED = false;
+	LOG.length = 0;
+	rowsEl.innerHTML = "";
+	checksEl.innerHTML = "";
+	outEl.textContent = "";
+	$("run").disabled = true;
+	$("quick").disabled = true;
+	$("stop").disabled = false;
+	var started = performance.now();
+	try {
+		if (!ENV_LINE) say(await envLine());
+		else say(ENV_LINE);
+		var profile = profileName === "quick" ? "quick" : "full";
+		say("browser tests " + VERSION + " · " + stamp() + " · " + profile + " matrix · budget " + BUDGET_MS + " ms/frame");
+		setStatus("checks…");
+		/* options.checks === false reuses the previous verdict, for a matrix rerun from
+		   a driver that already ran them (a second node sandbox pass) */
+		var reuse = overrides && overrides.checks === false && LAST_CHECKS;
+		var checks = reuse ? LAST_CHECKS : runChecks();
+		LAST_CHECKS = checks;
+		setStatus("perf…");
+		var rows = await runPerf(perfCases(profile), overrides);
+		var result = summarise(checks, rows);
+		say(result.line);
+		say("wall " + ((performance.now() - started) / 1000).toFixed(1) + " s · tab must stay visible for honest frames");
+		VERDICT = (result.ok ? "PASS · " : "FAIL · ") + result.line.replace(/^RESULT \w+ · /, "");
+		setStatus(VERDICT, result.ok ? "ok" : "bad");
+		await maybeSave();
+		return { checks: checks, rows: rows, result: result };
+	} catch (error) {
+		say("harness threw: " + (error && error.stack ? error.stack : error));
+		setStatus("harness threw — see the log", "bad");
+		return null;
+	} finally {
+		BUSY = false;
+		$("run").disabled = false;
+		$("quick").disabled = false;
+		$("stop").disabled = true;
+	}
+}
+
+/* ---------------------------- save + copy ---------------------------- */
+
+function logText() {
+	return LOG.join("\n") + "\n";
+}
+
+/* "Saved" means this exact text is already in the run log. Any new line clears it,
+   so the button can never paste the same section twice. */
+function refreshSave() {
+	var saved = !SAVING && LOG.length > 0 && logText() === SAVED_TEXT;
+	var button = $("save");
+	button.className = saved ? "saved" : "";
+	button.textContent = SAVING ? "Saving…" : saved ? "Saved \u2713" : "Save log";
+	button.disabled = SAVING || saved;
+	button.title = saved ? "This run is already in " + SAVED_PATH : "Append this run to the log the runner opened";
+}
+
+function markSaved(path) {
+	SAVED_TEXT = logText();
+	SAVED_PATH = path;
+	refreshSave();
+}
+
+function downloadLog(text) {
+	var name = VERSION + "-tests-" + fileStamp() + ".log";
+	var link = document.createElement("a");
+	link.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+	link.download = name;
+	link.click();
+	URL.revokeObjectURL(link.href);
+	return name;
+}
+
+async function saveLog() {
+	if (SAVING || !LOG.length) {
+		if (!LOG.length) setStatus("nothing to save yet — run the tests first", "bad");
+		return null;
+	}
+	var text = logText();
+	if (text === SAVED_TEXT) {
+		setStatus((VERDICT ? VERDICT + " · " : "") + "already saved · " + SAVED_PATH, "ok");
+		return null;
+	}
+	SAVING = true;
+	refreshSave();
+	try {
+		if (typeof fetch !== "function") {
+			var name = downloadLog(text);
+			say("[log] downloaded " + name + " (no log server)");
+			markSaved(name);
+			setStatus((VERDICT ? VERDICT + " · " : "") + "downloaded " + name, "ok");
+			return null;
+		}
+		var response = await fetch("__log", { method: "POST", headers: { "content-type": "text/plain; charset=utf-8" }, body: text });
+		if (!response.ok) throw new Error("server said " + response.status);
+		var info = await response.json();
+		if (info.duplicate) say("[log] already in " + info.path + " — nothing appended");
+		else say("[log] appended to " + info.path);
+		markSaved(info.path);
+		setStatus((VERDICT ? VERDICT + " · " : "") + (info.duplicate ? "already saved · " : "saved · ") + info.path, "ok");
+		return info;
+	} catch (error) {
+		var fallback = downloadLog(text);
+		say("[log] no log server (" + (error && error.message ? error.message : error) + ") — downloaded " + fallback);
+		markSaved(fallback);
+		return null;
+	} finally {
+		SAVING = false;
+		refreshSave();
+	}
+}
+
+async function maybeSave() {
+	if (!document.getElementById("auto").checked) return null;
+	if (searchString().indexOf("save=0") >= 0) return null;
+	return saveLog();
+}
+
+function copyFeedback(ok) {
+	var button = $("copy");
+	button.className = ok ? "copied" : "";
+	button.textContent = ok ? "Copied \u2713" : "Copy log";
+	clearTimeout(COPY_TIMER);
+	COPY_TIMER = setTimeout(function () {
+		button.className = "";
+		button.textContent = "Copy log";
+	}, 1400);
+}
+
+function copyLog() {
+	var text = logText();
+	function fallback() {
+		var area = document.createElement("textarea");
+		area.value = text;
+		document.body.appendChild(area);
+		area.select();
+		var copied = false;
+		try { copied = document.execCommand("copy"); } catch (error) { copied = false; }
+		document.body.removeChild(area);
+		copyFeedback(copied);
+		setStatus(copied ? "copied " + LOG.length + " lines" : "clipboard blocked — use Save log", copied ? "ok" : "bad");
+	}
+	if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+		navigator.clipboard.writeText(text).then(function () {
+			copyFeedback(true);
+			setStatus("copied " + LOG.length + " lines", "ok");
+		}, fallback);
+		return;
+	}
+	fallback();
+}
+
+/* ---------------------------- wiring ---------------------------- */
+
+$("run").addEventListener("click", function () { run("full"); });
+$("quick").addEventListener("click", function () { run("quick"); });
+$("stop").addEventListener("click", function () { STOPPED = true; setStatus("stopping after the current frame…"); });
+$("save").addEventListener("click", function () { saveLog(); });
+$("copy").addEventListener("click", function () { copyLog(); });
+
+var Harness = {
+	VIEW_W: VIEW_W,
+	VIEW_H: VIEW_H,
+	BUDGET_MS: BUDGET_MS,
+	env: envLine,
+	checks: runChecks,
+	perfCases: perfCases,
+	runPerf: runPerf,
+	summarise: summarise,
+	run: run,
+	save: saveLog,
+};
+window.Harness = Harness;
+
+refreshSave();
+startup();
+
+async function startup() {
+	say("booting…");
+	await envLine();
+	say(ENV_LINE);
+	say("served " + (typeof location !== "undefined" ? location.protocol : "?") + " · Save needs run_tests.py; otherwise the log downloads");
+	window.__ready = true;
+	if (window.__harnessManual) {
+		setStatus("ready — harness API in window.Harness");
+		return;
+	}
+	var query = searchString();
+	if (query.indexOf("run=0") >= 0) {
+		setStatus("ready — press Run all or Quick (the log is empty until a run)");
+		return;
+	}
+	run(query.indexOf("run=quick") >= 0 ? "quick" : "full");
+}
+</script>
+</body>
+</html>

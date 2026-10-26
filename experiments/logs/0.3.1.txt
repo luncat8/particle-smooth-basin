@@ -1,0 +1,8 @@
+0.3.1 browser harness + one-command runner · node v22.22.3 · linux x86_64 · 2026-10-25
+node checks via run_tests.py --node-only: smoke ok · thermal ok · bench ok · harness lint ok
+bench: default n=810 0.38 ms/frame · near-cap n=1500 1.07 ms/frame · pair peak 2209/12000 and 3754 · effective-link peak 74 · cold-link peak 1836/12000
+bench: equilibrium dens 0.5 -> 0.500 · dens 2.0 -> 1.000 · NaN=0 at defaults, after splash, arch-size stress
+harness lint (tests.html run in the fake DOM, not a browser): 13 element ids referenced and present · 7 checks ok · quick matrix 2 cases · run("quick") posted one log with RESULT pass · checks 7/7 · perf 2/2 within 16.7 ms
+harness full matrix in the fake DOM: 11 rows · beads 302/810/1500 · cold-links links=185 · stirred-cap links=627 · RESULT pass · checks 7/7 · perf 11/11 · worst p95 13.66 ms (cap dpr2) · 20.9 s wall
+harness sandbox numbers are fake-canvas: sim p95 4-6 ms is the node proxy context, not a frame time — no browser in this sandbox
+browser matrix not captured here: run python3 run_tests.py on the target device (300/810/1500 beads × DPR 1/2 × temperature view, cold/high-link preset, stirred near-cap)

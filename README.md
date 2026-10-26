@@ -19,6 +19,15 @@ The upper part of the basin is a cold gradient source; the lower part adds heat.
 
 ## Development checks
 
-Run `node experiments/bench.js` for a seeded physics throughput and link-capacity baseline. Run `node experiments/thermal.js` for thermal, pointer, wave-step, and bond-lifetime checks, and `node experiments/smoke.js` for classic-script UI checks. The engine is DOM-free and can be required directly by Node.
+Double-click `run_tests.py` (or `python3 run_tests.py` — no arguments needed). It runs the node checks, then serves this directory and opens `tests.html` in your browser, and both halves land in one log named `<version>-tests-<date-time>.log` under `experiments/logs/`, with the version read from `VERSION`. The server's root redirects to the tests page; the app itself stays at `/index.html`.
 
-To measure a complete browser frame, open `index.html?profile=1`: after 300 frames the stats line (and console) shows median and p95 frame, simulation, and render times. Profiling is off unless requested and adds no per-frame allocation.
+- **Node checks** — `experiments/smoke.js` (classic-script boot, presets, controls, DPR change, `?profile=1`), `experiments/thermal.js` (thermal, pointer, wave-step, bond lifetime), `experiments/bench.js` (seeded throughput and link-capacity baseline), `experiments/harness.js` (lint and sandbox run of the browser harness).
+- **Browser tests** — `tests.html` runs its checks (boot, canvas pixels, invariants, pointer/splash, resize, thermal bounds, profiler) and the frame-profile matrix from `0.3-plan.md` — ≈300/810/1500 beads × DPR 1/2 × temperature view, then a cold/high-link preset and a stirred near-cap scene. Every case reports p50/p95 for the frame callback, `stepWorld`, `render`, and the `requestAnimationFrame` interval.
+- **GPU** — the environment line classifies the renderer (hardware versus SwiftShader/llvmpipe), and the `rAF p95` column is where raster and compositor cost shows up; there is no WebGPU path yet, so no GPU-versus-CPU parity case exists.
+- **Results** — the page appends its section to the run log automatically when a run finishes and then shows `Saved ✓` on a disabled, highlighted button: the same log is never written twice (the server also rejects a repeated section, so two tabs cannot duplicate it). The button comes back as soon as a new line exists. `Copy log` copies the log. Opening `tests.html` directly (`file://`) works too — Save then downloads the file.
+
+The server sends `Cross-Origin-Opener-Policy` and `Cross-Origin-Embedder-Policy`, so the page is cross-origin isolated and `performance.now()` keeps microsecond resolution instead of being coarsened to 0.1 ms. That is the only reason the runner is a server; `file://` timings still work but are coarser.
+
+`index.html?profile=1` measures the real page (HUD included) on its own: after 300 frames the stats line and console show p50/p95 for frame, simulation, and render. The recorder lives in `js/profile.js` and is shared with `tests.html`; profiling is off unless requested and adds no per-frame allocation.
+
+The engine is DOM-free and can be required directly by Node; `experiments/fake-dom.js` boots a page bundle in a VM for the node checks, which validates logic but never canvas pixels or real frame times.

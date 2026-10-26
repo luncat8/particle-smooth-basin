@@ -39,7 +39,12 @@ findings-pitfalls-skills.md - notes and pitfalls for LLM agents. write here if f
 
 archive/ - for implemented plans
 
+tests.html - the browser test harness (checks + frame-profile matrix); opened by run_tests.py, or on its own for file://.
+run_tests.py - one command: node checks, then a local server with COOP/COEP and tests.html in the browser; both halves append to one log.
+VERSION - the number in every run log's name (<version>-tests-<date-time>.log). Bump it when the harness changes.
+
 experiments/ - measurement scripts (node), not loaded by the page.
+experiments/fake-dom.js - minimal DOM sandbox so node can boot a page bundle; proves logic, never pixels or timings.
 experiments/logs/ - without long formatting, keep only useful data that helpful in future to compare and detect improvement vs regression;
 
 ## sandbox

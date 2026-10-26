@@ -1,0 +1,22 @@
+0.3.2 first real-device capture, idempotent save, versioned log names
+capture: experiments/logs/0.3.1-tests-2026-10-25-23-47-16.log — win x86_64 · chrome 151 · dpr 1.25 · hw 20 · gpu nvidia · webgpu nvidia · isolated yes
+browser checks: boot, canvas (beads repaint 39.7% of 480x320), invariants (peak pairs 2206, links 256/12000), interaction (drag 75 px, splash h 26.0), resize, thermal, profile — 7/7 ok
+browser matrix, frame p50/p95 ms (sim p95 · render p95 · rAF p95):
+  light dpr1       0.83/1.02   0.36 · 0.74 · 5.60   n=302
+  light dpr2       0.49/1.00   0.32 · 0.70 · 5.60
+  light dpr1-temp  0.51/0.82   0.30 · 0.57 · 5.60
+  default dpr1     1.09/1.28   0.65 · 0.64 · 5.60   n=810  links 57
+  default dpr2     1.06/1.21   0.61 · 0.61 · 5.60         links 63
+  default dpr1-temp 1.03/1.14  0.54 · 0.59 · 5.60         links 69
+  cap dpr1         2.00/2.09   1.07 · 1.06 · 5.59   n=1500
+  cap dpr2         1.88/1.97   0.95 · 1.04 · 5.59
+  cap dpr1-temp    1.97/2.12   1.11 · 1.04 · 5.59
+  cold-links       1.18/1.30   0.72 · 0.61 · 5.59   n=810  links 161
+  stirred-cap      2.09/2.22   1.15 · 1.08 · 5.60   n=1500 links 601
+  RESULT pass · checks 7/7 · perf 11/11 within 16.7 ms · worst p95 2.22 ms (stirred-cap) · worst rAF 5.60 ms
+verdict: CPU/Canvas2D inside budget by ~7x at the worst case → WebGPU gate stays closed (0.3-plan.md)
+env note: that capture printed "timer 0.00 us" — the resolution was measured in µs and printed in ms; fixed in 0.3.2
+node reference, this tree, node v22.22.3 linux x86_64:
+  bench default n=810 0.38-0.56 ms/frame · near-cap n=1500 0.91-1.24 ms/frame · pair peak 2209 and 3754 · equilibrium 0.500/1.000
+  harness lint: 7 checks ok, quick matrix 2 cases, saved once, second Save posts nothing, duplicate POST rejected as duplicate
+  run_tests.py --node-only: log named 0.3.2-tests-<stamp>.log, LF endings, one browser section per distinct run

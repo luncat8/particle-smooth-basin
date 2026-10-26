@@ -38,6 +38,53 @@
   string sort), so p50/p95 over preallocated samples needs no
   comparator closure or scratch array beyond one `slice()` at report.
 
+## browser harness
+
+- serve the harness instead of using `file://`: with `Cross-Origin-Opener-Policy:
+  same-origin` and `Cross-Origin-Embedder-Policy: require-corp`, the page is
+  cross-origin isolated and `performance.now()` steps at ~5 us; without it the
+  clock is coarsened to 100 us, which is coarse against sub-millisecond stages.
+  `Cache-Control: no-store` keeps a reload from profiling a stale script.
+- measure the `requestAnimationFrame` interval next to the callback work. Callback
+  timing says how long your JS ran; the interval is where a slow compositor,
+  raster or an over-budget draw shows up as missed vsync. Both belong in the log.
+- a matrix harness needs a fixed scene, not the live page: rebuild the world per
+  case, set fill/radius before `spawnBed`, attach `buildSprites()` output to
+  `makeAssets()` (it leaves `sprites` null for app.js to fill), and time only
+  `stepWorld` + `render`, never scene setup.
+- `makeAssets()` is geometry-bound; call it after every backing-store resize or
+  gradients and `Path2D` outlines keep the old viewport.
+- beads legitimately leave the visible tank: the bed stacks from the floor upward
+  and its top row spawns above the rim of an open-topped basin, and a splash
+  throws beads above it. Invariants should bound the side walls, the floor and a
+  generous ceiling, not the tank outline.
+- a browser harness is still mostly testable in node: extract the page's inline
+  script, compile it with `vm.Script` for syntax, check every requested element id
+  exists in the markup, then run the script in the fake DOM and drive
+  `window.Harness`. That catches broken selectors, wrong engine calls and bad
+  assertions without a browser. Pixels and frame times remain browser-only.
+- have the page POST its log to the runner (`POST /__log`) so one run is one file:
+  the node half is already in the file, and the page appends its own section with
+  the environment line, every check, every perf row and a single `RESULT` line.
+  Keep a download fallback for `file://` where there is no server.
+- an appending save needs two independent walls against the same numbers landing
+  twice: the page keeps the exact text it last saved and disables the button
+  ("Saved", highlighted) until any new line appears, and the server compares the
+  posted body with the previous one and answers `duplicate: true` instead of
+  appending. The client check alone fails when two tabs or a stale page save the
+  same run; the server check alone still lets the user click into an invisible
+  no-op. Note the trap in the client half: the "already saved" feedback must not
+  itself append a log line, or the log text changes and the next click saves again.
+- name run logs `<version>-tests-<date-time>.log` and read the version from one
+  `VERSION` file at the repo root, passed to the page as `?version=` so a
+  downloaded fallback carries the same prefix. A directory of runs then sorts and
+  greps by plan number, which is how these logs get compared.
+- write run logs with `newline='\n'`. Python's text mode turns every `\n` into
+  `\r\n` on Windows, which mixed with the node half of the same file.
+- print clock resolution in the unit it was measured in. `performance.now()` steps
+  by ~5 us when cross-origin isolated and 100 us otherwise; dividing microseconds
+  by 1000 and printing two decimals reported "0.00 us" on every platform.
+
 ## tooling
 
 - classic `<script>` files share one global lexical scope in the
