@@ -431,6 +431,35 @@ function checkThermal() {
 	return passed("temp " + tMin.toFixed(2) + "-" + tMax.toFixed(2) + " · r " + rMin.toFixed(1) + "-" + rMax.toFixed(1) + " · hot/cold size " + (hotSum / q).toFixed(1) + "/" + (coldSum / q).toFixed(1));
 }
 
+/* The plan's live-feel item: at the DEFAULT rates the cold band must reach the bed,
+   otherwise thermal bonds are invisible without turning the sliders up. */
+function checkThermalZone() {
+	var world = createWorld(VIEW_W, VIEW_H);
+	for (var f = 0; f < 240; f++) stepWorld(world, 1 / 60);
+	var links = 0, cold = 0, topSum = 0, topN = 0, bottomSum = 0, bottomN = 0;
+	for (var k = 0; k < world.linkN; k++) if (world.linkK[k] >= 0.02) links++;
+	var topEdge = world.tank.y0 + (world.tank.y1 - world.tank.y0) * 0.25;
+	var bottomEdge = world.tank.y1 - (world.tank.y1 - world.tank.y0) * 0.25;
+	for (var i = 0; i < world.n; i++) {
+		if (world.temp[i] < 0.483) cold++;
+		if (world.y[i] < topEdge) { topSum += world.temp[i]; topN++; }
+		if (world.y[i] > bottomEdge) { bottomSum += world.temp[i]; bottomN++; }
+	}
+	if (cold < 100) return failed("only " + cold + " of " + world.n + " beads are cold enough to bond after 4 s at 1x");
+	if (links < 200) return failed("only " + links + " active bonds after 4 s at 1x");
+	var top = topN ? topSum / topN : 0, bottom = bottomN ? bottomSum / bottomN : 0;
+	if (!(top < 0.40 && bottom > 0.60)) return failed("band reads warm: top " + top.toFixed(2) + " bottom " + bottom.toFixed(2));
+	/* with the source off nothing leaves T=0.5, so no bead may bond */
+	var neutral = createWorld(VIEW_W, VIEW_H);
+	setSourceRate(neutral, 0);
+	setConductionRate(neutral, 0);
+	for (var g = 0; g < 60; g++) stepWorld(neutral, 1 / 60);
+	for (var m = 0; m < neutral.linkN; m++) {
+		if (neutral.linkK[m] >= 0.02) return failed("a bond formed with the thermal source off");
+	}
+	return passed("cold " + cold + "/" + world.n + " · " + links + " bonds · top " + top.toFixed(2) + " bottom " + bottom.toFixed(2) + " at 1x");
+}
+
 function checkProfile() {
 	var profiler = createProfiler(5);
 	for (var i = 1; i <= 4; i++) if (profiler.record(i, i, i)) return failed("reported at " + i + " frames");
@@ -455,6 +484,7 @@ var CHECKS = [
 	{ id: "interaction", run: checkInteraction },
 	{ id: "resize", run: checkResize },
 	{ id: "thermal", run: checkThermal },
+	{ id: "thermal-zone", run: checkThermalZone },
 	{ id: "profile", run: checkProfile },
 ];
 

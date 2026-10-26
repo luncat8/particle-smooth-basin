@@ -104,7 +104,9 @@ function waitFor(predicate, label, timeoutMs) {
 	assert.match(env, /timer [\d.]+ us/, "environment line reports the timer step");
 
 	const checks = harness.checks();
-	assert.equal(checks.length, 7, "seven checks run");
+	assert.equal(checks.length, 8, "eight checks run");
+	assert.ok(checks.some(check => check.id === "thermal-zone" && /bonds/.test(check.detail)),
+		"the default-rate thermal zone check reports bond counts");
 	for (const check of checks) assert.ok(check.ok, "check " + check.id + " failed: " + check.detail);
 	assert.ok(checks.some(check => check.id === "canvas" && /skipped/.test(check.detail)),
 		"the pixel check reports itself skipped without a rasterizer");
@@ -128,7 +130,7 @@ function waitFor(predicate, label, timeoutMs) {
 
 	const passing = harness.summarise(checks, rows);
 	assert.ok(passing.ok, "summary passes when every check and case is inside budget");
-	assert.match(passing.line, /^RESULT pass · checks 7\/7 · perf 1\/1 within 16\.7 ms/);
+	assert.match(passing.line, /^RESULT pass · checks 8\/8 · perf 1\/1 within 16\.7 ms/);
 	const failing = harness.summarise(checks.map((check, index) => (index === 0 ? { id: check.id, ok: false } : check)), rows);
 	assert.equal(failing.ok, false, "summary fails when a check fails");
 	assert.match(failing.line, /^RESULT fail/);
@@ -154,8 +156,8 @@ function waitFor(predicate, label, timeoutMs) {
 	assert.match(posted[0].body, /browser tests 0\.3\.2 · \d{4}-\d\d-\d\d/, "the posted log names its version and date");
 	assert.match(posted[0].body, /check boot ok · /);
 	assert.match(posted[0].body, /perf default dpr1 · n=\d+/);
-	assert.match(posted[0].body, /RESULT pass · checks 7\/7 · perf 2\/2 within 16\.7 ms/);
-	assert.match(sandboxHost.elements.status.textContent, /^PASS · checks 7\/7/, "status line carries the verdict");
+	assert.match(posted[0].body, /RESULT pass · checks 8\/8 · perf 2\/2 within 16\.7 ms/);
+	assert.match(sandboxHost.elements.status.textContent, /^PASS · checks 8\/8/, "status line carries the verdict");
 	assert.match(sandboxHost.elements.out.textContent, /RESULT pass/, "the page's log element holds the report");
 
 	/* pressing Save again must neither post nor drop the saved highlight */
@@ -180,6 +182,7 @@ function waitFor(predicate, label, timeoutMs) {
 	console.log("sandbox page path: quick run in " + ((Date.now() - started) / 1000).toFixed(1)
 		+ " s · saved once · second Save posts nothing · duplicate response accepted as saved");
 	console.log("checks: " + checks.map(check => check.id + "=" + (check.ok ? "ok" : "FAIL")).join(" "));
+	console.log("thermal zone: " + (checks.find(check => check.id === "thermal-zone") || {}).detail);
 	console.log("perf row: " + row.id + " n=" + row.n + " frames=" + row.frames
 		+ " frame p50 " + row.frame.p50.toFixed(2) + " p95 " + row.frame.p95.toFixed(2)
 		+ " · sim p95 " + row.sim.p95.toFixed(2) + " · render p95 " + row.render.p95.toFixed(2));

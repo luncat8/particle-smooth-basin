@@ -27,6 +27,12 @@ const LINK_HEAT_MAX = 0.55;
 const LINK_ACTIVE_K = 0.02;	// weaker bonds keep their rest but skip the constraint solver
 const MAX_SPEED = 1600;		// px/s
 const WAVE_REACT = 22;		// px/s per ripple kick unit: reaction impulse on the bead
+/* The cold band reaches 80% of the way down to the waterline. At the old 0.24 it
+   ended above the settled bed, so at default rates only ~30 of 810 beads ever got
+   cold enough to bond (measured: experiments/thermal-zone.js). The band is also what
+   render.js draws, so the colder top of the bed is visible. */
+const COLD_ZONE_END = 0.40;	// share of H cooled from the top, and drawn as the cold gradient
+const HOT_ZONE_START = 0.76;	// share of H where the heated bottom band starts
 const PAL_LIGHT = 6;		// sprite palette: 0..5 light beads, 6..11 deep
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -43,6 +49,7 @@ function createWorld(W, H) {
 		rBar: DEFAULT_RADIUS, rMax: 24,
 		fillFraction: DEFAULT_FILL, typicalRadius: DEFAULT_RADIUS, massScale: 1,
 		sourceRate: 1, conductionRate: 1, sizeResponse: 0, archSize: 0, buoyancy: 1,
+		coldZoneEnd: COLD_ZONE_END, hotZoneStart: HOT_ZONE_START,
 		temperatureView: false,
 		n: 0, cap,
 		x: new Float64Array(cap), y: new Float64Array(cap),
@@ -451,8 +458,8 @@ function exchangeHeat(world, h) {
 	const sourceRate = world.sourceRate, conductionRate = world.conductionRate;
 	if (sourceRate <= 0 && conductionRate <= 0) return;
 	const temp = world.temp, delta = world.heatDelta;
-	const topEnd = world.H * 0.24;
-	const bottomStart = world.H * 0.76;
+	const topEnd = world.H * world.coldZoneEnd;
+	const bottomStart = world.H * world.hotZoneStart;
 	for (let i = 0; i < world.n; i++) {
 		if (sourceRate > 0) {
 			const py = world.y[i];
@@ -727,6 +734,6 @@ if (typeof module !== "undefined" && module.exports) {
 		setSourceRate, setConductionRate, setSizeResponse, setArchSize, setBuoyancy,
 		setTypicalRadius, setFillFraction, setMassScale,
 		disturb, pickBead, pointerMove, pointerDown, pointerUp,
-		SPAWN_CAP, WATER_FRAC, SUBSTEP,
+		SPAWN_CAP, WATER_FRAC, SUBSTEP, COLD_ZONE_END, HOT_ZONE_START,
 	};
 }

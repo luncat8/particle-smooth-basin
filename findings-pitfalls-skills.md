@@ -95,6 +95,21 @@
   experiments/ can require it directly — bench and sanity checks run in
   milliseconds without a browser.
 
+## thermal tuning
+
+- a relaxation zone that ends above the settled bed produces a thermal model that
+  looks dead at its default rates: 810 beads, 1x source, band ending at 0.24 of the
+  view — 23 cold beads and 60 links. The band has to overlap the bed, and the
+  metric to judge it by is bond count plus the band temperatures on either side,
+  not the slider range. Retune geometry before rates; the rates only widen the
+  gradient once some of the bed is inside the band.
+- keep a drawn gradient and its physics band on the same variable. Two hard-coded
+  0.24/0.76 pairs in engine and render meant the picture and the measurement could
+  disagree, and the number could not be swept.
+- sweep geometry against a seeded bed and report frame cost next to the look. Here
+  every band from 0.36 to 0.48 costs 0.78-0.87 ms/frame, so the choice was purely
+  visual and could be made without a budget argument.
+
 ## simulation state
 
 - persistent pair constraints need an explicit death path. a hash that only

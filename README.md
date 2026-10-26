@@ -15,14 +15,14 @@ A file://-friendly particle basin experiment. Open `index.html` directly in a mo
 - **Average mass** scales inertia while the independent random density continues to determine buoyancy.
 - **Temperature hue** switches from density colors to the normalized 0–1 temperature palette.
 
-The upper part of the basin is a cold gradient source; the lower part adds heat. Cold nearby beads form distance-constraint bonds that soften as the pair warms and thaw once warm or stretched beyond neighbor range.
+The upper 40% of the view is a cold gradient source; the lower 24% adds heat. The cold band reaches into the settled bed, so its upper half holds visible bonds at the default rates while the bottom stays fluid. Cold nearby beads form distance-constraint bonds that soften as the pair warms and thaw once warm or stretched beyond neighbor range.
 
 ## Development checks
 
 Double-click `run_tests.py` (or `python3 run_tests.py` — no arguments needed). It runs the node checks, then serves this directory and opens `tests.html` in your browser, and both halves land in one log named `<version>-tests-<date-time>.log` under `experiments/logs/`, with the version read from `VERSION`. The server's root redirects to the tests page; the app itself stays at `/index.html`.
 
-- **Node checks** — `experiments/smoke.js` (classic-script boot, presets, controls, DPR change, `?profile=1`), `experiments/thermal.js` (thermal, pointer, wave-step, bond lifetime), `experiments/bench.js` (seeded throughput and link-capacity baseline), `experiments/harness.js` (lint and sandbox run of the browser harness).
-- **Browser tests** — `tests.html` runs its checks (boot, canvas pixels, invariants, pointer/splash, resize, thermal bounds, profiler) and the frame-profile matrix from `0.3-plan.md` — ≈300/810/1500 beads × DPR 1/2 × temperature view, then a cold/high-link preset and a stirred near-cap scene. Every case reports p50/p95 for the frame callback, `stepWorld`, `render`, and the `requestAnimationFrame` interval.
+- **Node checks** — `experiments/smoke.js` (classic-script boot, presets, controls, DPR change, `?profile=1`), `experiments/thermal.js` (thermal, pointer, wave-step, bond lifetime), `experiments/bench.js` (seeded throughput and link-capacity baseline), `experiments/thermal-zone.js` (zone geometry and source-rate sweep: bond count, band temperatures, link churn, stir recovery), `experiments/harness.js` (lint and sandbox run of the browser harness).
+- **Browser tests** — `tests.html` runs its checks (boot, canvas pixels, invariants, pointer/splash, resize, thermal bounds, default-rate bond visibility, profiler) and the frame-profile matrix from `0.3-plan.md` — ≈300/810/1500 beads × DPR 1/2 × temperature view, then a cold/high-link preset and a stirred near-cap scene. Every case reports p50/p95 for the frame callback, `stepWorld`, `render`, and the `requestAnimationFrame` interval.
 - **GPU** — the environment line classifies the renderer (hardware versus SwiftShader/llvmpipe), and the `rAF p95` column is where raster and compositor cost shows up; there is no WebGPU path yet, so no GPU-versus-CPU parity case exists.
 - **Results** — the page appends its section to the run log automatically when a run finishes and then shows `Saved ✓` on a disabled, highlighted button: the same log is never written twice (the server also rejects a repeated section, so two tabs cannot duplicate it). The button comes back as soon as a new line exists. `Copy log` copies the log. Opening `tests.html` directly (`file://`) works too — Save then downloads the file.
 

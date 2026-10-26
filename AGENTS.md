@@ -45,6 +45,7 @@ VERSION - the number in every run log's name (<version>-tests-<date-time>.log). 
 
 experiments/ - measurement scripts (node), not loaded by the page.
 experiments/fake-dom.js - minimal DOM sandbox so node can boot a page bundle; proves logic, never pixels or timings.
+experiments/thermal-zone.js - thermal band geometry and source-rate sweep; the bands are the same numbers the page draws, so a table row is what a viewer sees.
 experiments/logs/ - without long formatting, keep only useful data that helpful in future to compare and detect improvement vs regression;
 
 ## sandbox

@@ -4,8 +4,9 @@
     Starts a local HTTP server for this directory and opens tests.html in the default
     browser. Two phases land in the same timestamped log under experiments/logs/:
 
-      1. node checks - experiments/smoke.js, experiments/thermal.js, experiments/bench.js
-         and experiments/harness.js (the tests.html lint). Echoed and written as they run.
+      1. node checks - experiments/smoke.js, experiments/thermal.js, experiments/bench.js,
+         experiments/thermal-zone.js (zone geometry and rate sweep) and experiments/harness.js
+         (the tests.html lint). Echoed and written as they run.
       2. browser tests - tests.html runs its checks and the frame-profile matrix, then
          POSTs its log to this server, which appends it to the same file. The page also
          has Save log (same append) and Copy log, and it refuses to send the same log
@@ -51,7 +52,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 LOG_DIR = ROOT / "experiments" / "logs"
 VERSION_FILE = ROOT / "VERSION"
-NODE_CHECKS = ["experiments/smoke.js", "experiments/thermal.js", "experiments/bench.js", "experiments/harness.js"]
+NODE_CHECKS = ["experiments/smoke.js", "experiments/thermal.js", "experiments/bench.js",
+               "experiments/thermal-zone.js", "experiments/harness.js"]
 MAX_POST = 2 * 1024 * 1024
 LOOPBACK = {"127.0.0.1", "::1"}
 

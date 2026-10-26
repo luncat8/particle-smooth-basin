@@ -99,10 +99,12 @@ function makeAssets(ctx, world) {
 	a.floorGrad.addColorStop(0, "rgba(110,190,215,0.10)");
 	a.floorGrad.addColorStop(1, "rgba(110,190,215,0)");
 
-	a.coldZone = ctx.createLinearGradient(0, 0, 0, H * 0.24);
+	a.coldZoneEnd = H * world.coldZoneEnd;		// the drawn band is the physics band
+	a.hotZoneStart = H * world.hotZoneStart;
+	a.coldZone = ctx.createLinearGradient(0, 0, 0, a.coldZoneEnd);
 	a.coldZone.addColorStop(0, "rgba(74,138,255,0.12)");
 	a.coldZone.addColorStop(1, "rgba(74,138,255,0)");
-	a.hotZone = ctx.createLinearGradient(0, H * 0.76, 0, H);
+	a.hotZone = ctx.createLinearGradient(0, a.hotZoneStart, 0, H);
 	a.hotZone.addColorStop(0, "rgba(255,142,70,0)");
 	a.hotZone.addColorStop(1, "rgba(255,142,70,0.13)");
 
@@ -172,9 +174,9 @@ function render(ctx, world, a) {
 	ctx.fillStyle = a.waterGradA;
 	ctx.fill();
 	ctx.fillStyle = a.coldZone;
-	ctx.fillRect(t.x0, 0, t.x1 - t.x0, H * 0.24);
+	ctx.fillRect(t.x0, 0, t.x1 - t.x0, a.coldZoneEnd);
 	ctx.fillStyle = a.hotZone;
-	ctx.fillRect(t.x0, H * 0.76, t.x1 - t.x0, H * 0.24);
+	ctx.fillRect(t.x0, a.hotZoneStart, t.x1 - t.x0, H - a.hotZoneStart);
 
 	const linkN = world.linkActiveN;
 	if (linkN) {

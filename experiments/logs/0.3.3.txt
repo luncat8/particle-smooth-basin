@@ -1,0 +1,19 @@
+0.3.3 cold band reaches the bed · second real capture · node v22.22.3 linux x86_64 · 2026-10-26
+capture 2, win x86_64 · chrome 151 · dpr 1.25 · hw 20 · gpu nvidia · webgpu nvidia · isolated yes · timer 5.0 us
+  confirms 0.3.2 fixes: versioned log name, one browser section, timer in µs
+  11/11 cases within 16.7 ms · worst p95 2.09 ms (stirred-cap) · worst rAF 5.63 ms (light dpr1)
+  light 0.75-0.83 · default 1.13-1.23 · cap 1.96-2.04 · cold-links 1.21 · stirred-cap 2.09 (frame p95, ms)
+  sim p95 0.32-1.08 · render p95 0.44-1.04 — unchanged from capture 1 within noise
+zone sweep, seeded, 480 frames (8 s), source 1x, conduction 1x — links avg/max · cold beads · coldBonds · top/bottom mean T · ms/frame
+  old 0.24   60/72    23    0    0.49/0.84  0.87   ← why bonds were invisible at the default rates
+  cold 0.36  390/445  177   28   0.33/0.83  0.87
+  shipped    500/569  219  152   0.25/0.83  0.79   ← cold 0.40
+  cold 0.44  606/678  261  288   0.20/0.84  0.80
+  cold 0.48  735/810  304  406   0.17/0.83  0.82
+  cold 0.44 hot 0.70 607/680 260 273 0.20/0.93 0.82 · cold 0.40 hot 0.70 509/581 222 157 0.25/0.93 0.78
+  cold 0.44 hot 0.82 607/679 257 282 0.20/0.72 0.80
+source-rate sweep at the shipped band: 0x → 0 links (bed stays at T=0.5) · 0.5x 413 · 1x 515 · 2x 589 · 4x 659
+  stir (links 0.5 s after a splash) 654 at 1x, recovering to 758 — the crust tears and re-forms
+60 s soak at the shipped band: default n=810 links 846 (peak 848) cold 326 meanT 0.59 max|v| 3 0.66 ms/frame · cap n=1500 links 1365 cold 509 meanT 0.63 max|v| 16 1.61 ms/frame · NaN=0 both
+node reference after the change: bench default 0.67 ms/frame · near-cap 1500 1.26 ms/frame · pairs 2209 and 3754 · equilibrium 0.500/1.000
+harness: 8 checks ok (thermal-zone: cold 193/810, 498 bonds, top 0.31 bottom 0.77 at 1x) · 13 ids · save path unchanged
