@@ -11,6 +11,7 @@ const DEEP_COLORS = ["#4fb6c9", "#6f97dd", "#b58ad6", "#d99a63", "#3fa98a", "#7f
 const TEMP_COLORS = ["#5686f5", "#55aef2", "#4dcbdc", "#57d6ae", "#88d66d", "#c4d45d", "#e8bf55", "#f49a50", "#ef7055", "#e95170"];
 
 const FONT_MONO = "10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+let waterLabelFrac = -1, waterLabel = "";	// rebuilt only when the waterline moves
 
 function rgba(hex, a) {
 	const v = parseInt(hex.slice(1), 16);
@@ -225,5 +226,9 @@ function render(ctx, world, a) {
 	drawTank(ctx, world, a);
 
 	ctx.fillStyle = "rgba(170,220,235,0.42)";
-	ctx.fillText("WATER LEVEL \u00B7 50%", t.x1 - 14, waterY - 10);
+	if (waterLabelFrac !== world.waterFrac) {
+		waterLabelFrac = world.waterFrac;
+		waterLabel = "WATER LEVEL \u00B7 " + Math.round(world.waterFrac * 100) + "%";
+	}
+	ctx.fillText(waterLabel, t.x1 - 14, waterY - 10);
 }

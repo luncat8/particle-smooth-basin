@@ -91,6 +91,7 @@ function createSandbox(options) {
 	const sandbox = Object.assign({
 		Path2D,
 		document: {
+			body: fakeElement("body"),
 			getElementById: id => elements[id] || (elements[id] = fakeElement(id)),
 			createElement: tag => (tag === "canvas" ? fakeCanvas() : fakeElement("")),
 			addEventListener() {},

@@ -106,6 +106,8 @@ var PROFILES = {
 /* cold/high-link preset and a stirred near-cap scene: the two interaction cases */
 var PRESET_CASE = { id: "cold-links", fill: 0.50, radius: 14, dpr: 1, temp: false, preset: [-1, -4], rates: [2, 2], warm: 240, measure: 150 };
 var STIR_CASE = { id: "stirred-cap", fill: 0.70, radius: 10, dpr: 1, temp: false, interaction: true, warm: 60, measure: 120 };
+/* the scene the app actually opens with, straight from the engine's settings */
+var SHIPPED_CASE = { id: "shipped", settings: SETTINGS, dpr: 1, temp: false, warm: 90, measure: 150 };
 
 /* ---------------------------- log + status ---------------------------- */
 
@@ -435,13 +437,14 @@ function checkThermal() {
    otherwise thermal bonds are invisible without turning the sliders up. */
 function checkThermalZone() {
 	var world = createWorld(VIEW_W, VIEW_H);
-	for (var f = 0; f < 240; f++) stepWorld(world, 1 / 60);
-	var links = 0, cold = 0, topSum = 0, topN = 0, bottomSum = 0, bottomN = 0;
+	for (var f = 0; f < 480; f++) stepWorld(world, 1 / 60);
+	var links = 0, cold = 0, above = 0, topSum = 0, topN = 0, bottomSum = 0, bottomN = 0;
 	for (var k = 0; k < world.linkN; k++) if (world.linkK[k] >= 0.02) links++;
 	var topEdge = world.tank.y0 + (world.tank.y1 - world.tank.y0) * 0.25;
 	var bottomEdge = world.tank.y1 - (world.tank.y1 - world.tank.y0) * 0.25;
 	for (var i = 0; i < world.n; i++) {
 		if (world.temp[i] < 0.483) cold++;
+		if (world.y[i] < world.waterY) above++;
 		if (world.y[i] < topEdge) { topSum += world.temp[i]; topN++; }
 		if (world.y[i] > bottomEdge) { bottomSum += world.temp[i]; bottomN++; }
 	}
@@ -449,6 +452,16 @@ function checkThermalZone() {
 	if (links < 200) return failed("only " + links + " active bonds after 4 s at 1x");
 	var top = topN ? topSum / topN : 0, bottom = bottomN ? bottomSum / bottomN : 0;
 	if (!(top < 0.40 && bottom > 0.60)) return failed("band reads warm: top " + top.toFixed(2) + " bottom " + bottom.toFixed(2));
+	/* the shipped scene: the bed must sit under the water and reach the cold band,
+	   while the heated floor stays in the hot band. Half the beads float, so a few
+	   of them bobbing at the surface is expected -- a bed standing out of the water
+	   is not. */
+	var bedTop = world.tank.y1;
+	for (var b = 0; b < world.n; b++) if (world.y[b] < bedTop) bedTop = world.y[b];
+	if (above > world.n * 0.05) return failed(above + " of " + world.n + " beads stand above the waterline");
+	if (bedTop < world.waterY - 40) return failed("the bed top (" + Math.round(bedTop) + " px) is " + Math.round(world.waterY - bedTop) + " px out of the water");
+	if (bedTop > world.coldZoneEnd * VIEW_H) return failed("the bed top (" + Math.round(bedTop) + " px) sits below the cold band end");
+	if (world.tank.y1 < world.hotZoneStart * VIEW_H) return failed("the hot band starts below the floor");
 	/* with the source off nothing leaves T=0.5, so no bead may bond */
 	var neutral = createWorld(VIEW_W, VIEW_H);
 	setSourceRate(neutral, 0);
@@ -457,7 +470,8 @@ function checkThermalZone() {
 	for (var m = 0; m < neutral.linkN; m++) {
 		if (neutral.linkK[m] >= 0.02) return failed("a bond formed with the thermal source off");
 	}
-	return passed("cold " + cold + "/" + world.n + " · " + links + " bonds · top " + top.toFixed(2) + " bottom " + bottom.toFixed(2) + " at 1x");
+	return passed("cold " + cold + "/" + world.n + " · " + links + " bonds · top " + top.toFixed(2) + " bottom " + bottom.toFixed(2)
+		+ " · " + above + " above water · bed top " + Math.round(bedTop) + " px");
 }
 
 function checkProfile() {
@@ -511,7 +525,7 @@ function runChecks() {
 
 function perfCases(profile) {
 	var spec = PROFILES[profile] || PROFILES.full;
-	var cases = [];
+	var cases = [copyCase(SHIPPED_CASE)];	// always first: the scene the app opens with
 	for (var i = 0; i < spec.sizes.length; i++) {
 		var size = SIZES[spec.sizes[i]];
 		for (var j = 0; j < spec.variants.length; j++) {
@@ -572,8 +586,12 @@ function runPerfCase(kase, options) {
 	var measure = options && options.measure !== undefined ? options.measure : kase.measure;
 	return new Promise(function (resolve) {
 		var world = createWorld(VIEW_W, VIEW_H);
-		setFillFraction(world, kase.fill);
-		setTypicalRadius(world, kase.radius);
+		if (kase.settings) {
+			applySettings(world, kase.settings);
+		} else {
+			setFillFraction(world, kase.fill);
+			setTypicalRadius(world, kase.radius);
+		}
 		spawnBed(world);
 		if (kase.preset) {
 			setSizeResponse(world, kase.preset[0]);
@@ -600,7 +618,7 @@ function runPerfCase(kase, options) {
 				? profiler.summary()
 				: { frames: 0, frame: emptyStats(), sim: emptyStats(), render: emptyStats() };
 			row = {
-				id: kase.id, n: world.n, links: world.linkActiveN, dpr: kase.dpr, view: !!kase.temp,
+				id: kase.id, n: world.n, links: world.linkActiveN, dpr: kase.dpr || 1, view: !!kase.temp,
 				stopped: !!stopped, frames: summary.frames,
 				frame: summary.frame, sim: summary.sim, render: summary.render,
 				interval: intervals.count ? intervals.summary() : emptyStats(),

@@ -105,7 +105,7 @@ function waitFor(predicate, label, timeoutMs) {
 
 	const checks = harness.checks();
 	assert.equal(checks.length, 8, "eight checks run");
-	assert.ok(checks.some(check => check.id === "thermal-zone" && /bonds/.test(check.detail)),
+	assert.ok(checks.some(check => check.id === "thermal-zone" && /bonds/.test(check.detail) && /above water/.test(check.detail)),
 		"the default-rate thermal zone check reports bond counts");
 	for (const check of checks) assert.ok(check.ok, "check " + check.id + " failed: " + check.detail);
 	assert.ok(checks.some(check => check.id === "canvas" && /skipped/.test(check.detail)),
@@ -113,8 +113,11 @@ function waitFor(predicate, label, timeoutMs) {
 
 	const quick = harness.perfCases("quick");
 	const full = harness.perfCases("full");
-	assert.equal(quick.map(item => item.id).join(","), "default dpr1,default dpr2", "quick matrix");
-	assert.equal(full.length, 11, "full matrix is 3 sizes x 3 variants + 2 interaction cases");
+	assert.equal(quick.map(item => item.id).join(","), "shipped,default dpr1,default dpr2", "quick matrix");
+	assert.equal(full.length, 12, "full matrix is the shipped scene, 3 sizes x 3 variants and 2 interaction cases");
+	assert.equal(quick[0].id, "shipped", "the quick run starts by measuring the shipped scene");
+	assert.ok(full.some(item => item.id === "shipped" && item.settings && item.settings.fill > 0),
+		"the matrix measures the scene the app opens with");
 	assert.ok(full.some(item => item.id === "cap dpr1-temp"), "full matrix carries the temperature view at the cap");
 	assert.ok(full.some(item => item.id === "cold-links") && full.some(item => item.id === "stirred-cap"),
 		"full matrix carries the preset and stirred cases");
@@ -123,7 +126,8 @@ function waitFor(predicate, label, timeoutMs) {
 	assert.equal(rows.length, 1, "one perf row");
 	const row = rows[0];
 	assert.equal(row.frames, 5, "five measured frames");
-	assert.ok(row.n > 700 && row.n < 900, "default scene spawns the 810-bead bed, got " + row.n);
+	assert.equal(row.id, "shipped", "the first row is the shipped scene");
+	assert.ok(row.n > 250 && row.n < 450, "the shipped scene spawns a few hundred beads, got " + row.n);
 	assert.ok(Number.isFinite(row.frame.p50) && Number.isFinite(row.frame.p95), "frame percentiles are numbers");
 	assert.ok(row.frame.p95 >= row.frame.p50, "p95 is not below p50");
 	assert.ok(row.sim.p95 >= 0 && row.render.p95 >= 0 && row.interval.p95 >= 0, "stage percentiles are non-negative");
@@ -156,7 +160,7 @@ function waitFor(predicate, label, timeoutMs) {
 	assert.match(posted[0].body, /browser tests 0\.3\.2 · \d{4}-\d\d-\d\d/, "the posted log names its version and date");
 	assert.match(posted[0].body, /check boot ok · /);
 	assert.match(posted[0].body, /perf default dpr1 · n=\d+/);
-	assert.match(posted[0].body, /RESULT pass · checks 8\/8 · perf 2\/2 within 16\.7 ms/);
+	assert.match(posted[0].body, /RESULT pass · checks 8\/8 · perf 3\/3 within 16\.7 ms/);
 	assert.match(sandboxHost.elements.status.textContent, /^PASS · checks 8\/8/, "status line carries the verdict");
 	assert.match(sandboxHost.elements.out.textContent, /RESULT pass/, "the page's log element holds the report");
 

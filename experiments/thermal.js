@@ -70,7 +70,8 @@ assert.ok(Math.abs(world.r[0] / world.r[1] - 2) < 1e-6, "negative thermal respon
 
 // Buoyancy strength and Archimedes-size coupling are independent live controls.
 const arch = eng.createWorld(640, 480);
-assert.equal(arch.archSize, 0, "archimedes-size coupling defaults to zero");
+assert.equal(arch.archSize, eng.SETTINGS.arch, "the settings table carries the world's shipped coupling");
+eng.setArchSize(arch, 0);	// the checks below want the coupling out of the way
 assert.equal(arch.buoyancy, 1, "buoyancy strength defaults to 1x");
 eng.setSourceRate(arch, 0);
 eng.setConductionRate(arch, 0);

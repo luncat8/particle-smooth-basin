@@ -110,6 +110,33 @@
   every band from 0.36 to 0.48 costs 0.78-0.87 ms/frame, so the choice was purely
   visual and could be made without a budget argument.
 
+## scene balance
+
+- heat has to change a bead's density, not only its size. A size/Archimedes
+  coupling alone (`arch-only`, `flat`, `size-only`, `shrink` variants) left the
+  bed at `flux ~ 0` for 16-20 s: neighbours shift radii, nothing overturns. The
+  mechanism that works is an effective density `dens * (1 - 2*lift*(T - 0.5))`,
+  and it only shows up when the heated band is thick enough to touch the bed -
+  `hotStart` 0.84 gave 4 hot beads rising per second, 0.78 gave 7.
+- judge convection by overturning, not by mean vertical velocity. Net flux
+  `mean((T-0.5)*(-vy))` sat between -0.6 and +0.5 (noise) for every candidate,
+  while counting hot beads carried above the bed mid-line and cold ones below it
+  separated a still bed (0/s) from a circulating one (5-7/s).
+- a spawn lattice must be as wide as the widest bead it places. The old fixed
+  `2.4 * rBar` checkerboard is narrower than `2 * SIZE_FACTOR_MAX * rBar`, so
+  every bed started interpenetrating and blew itself 200-350 px upward in the
+  first second (one bead flung at the ceiling then passed for "the bed top").
+  Pack rows from each bead's own radius, and measure the bed surface with a
+  quantile, not the single highest bead.
+- half the beads are buoyant by design (`rollDensity`), so "the bed" always ends
+  up with a raft sitting on the waterline and a few beads bobbing above it.
+  A free-water metric based on the bed's top quantile flickers across zero for
+  that reason; count the beads above the waterline instead (1 of 340 is fine,
+  20 of 340 is a bed standing out of the water).
+- `setFillFraction`'s old `0.3` minimum silently defeated every sparse candidate
+  in a sweep - the sweep looked like "coverage has no effect". Check the setter's
+  clamp before concluding anything about a slider.
+
 ## simulation state
 
 - persistent pair constraints need an explicit death path. a hash that only

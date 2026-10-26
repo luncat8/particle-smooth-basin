@@ -6,9 +6,11 @@
 
 const TAU = Math.PI * 2;
 
-const WATER_FRAC = 0.5;		// waterline share of screen height
-const DEFAULT_FILL = 0.50;
+const WATER_FRAC = 0.30;		// waterline share of screen height: a water column above the bed
+const DEFAULT_FILL = 0.21;	// canvas coverage: a bed that leaves room to convect
 const DEFAULT_RADIUS = 14;
+const DEFAULT_SIZE = -0.35;	// hot shrinks: with a negative arch size, hot beads rise
+const DEFAULT_ARCH = -2.5;
 const SIZE_FACTOR_MAX = 1.28;	// upper bound on bead r/rBar; pair-grid cell size assumes it
 const SPAWN_CAP = 1500;
 const RHO_WATER = 1;
@@ -23,16 +25,23 @@ const CONTACT_ITER = 3;
 const CONTACT_SOFT = 0.55;	// 0..1 squishiness of contacts
 const CONTACT_DAMP = 1;		// 0..1 inelasticity of touching pairs (hydrogel: no bounce)
 const LINK_CREATE_RATIO = 1.08;	// bond creation distance / sum of radii
-const LINK_HEAT_MAX = 0.55;
+const LINK_HEAT_MAX = 0.55;	// bonds only form below this pair mean temperature
+const LINK_HEAT_RAMP = 0.40;	// stiffness falls to zero over this span below the ceiling
+const LINK_STRENGTH = 0.72;	// stiffness at zero temperature (times the ramp^exponent)
+const LINK_TEMP_EXP = 2;		// how sharply strength falls with temperature
+const THERMAL_LIFT = 0.40;	// hot beads are this much lighter than cold ones (0..1)
+const COLD_POWER = 2.5;		// shipped zone rates (the sliders' defaults)
+const HOT_POWER = 2.5;
 const LINK_ACTIVE_K = 0.02;	// weaker bonds keep their rest but skip the constraint solver
 const MAX_SPEED = 1600;		// px/s
 const WAVE_REACT = 22;		// px/s per ripple kick unit: reaction impulse on the bead
-/* The cold band reaches 80% of the way down to the waterline. At the old 0.24 it
-   ended above the settled bed, so at default rates only ~30 of 810 beads ever got
-   cold enough to bond (measured: experiments/thermal-zone.js). The band is also what
-   render.js draws, so the colder top of the bed is visible. */
-const COLD_ZONE_END = 0.40;	// share of H cooled from the top, and drawn as the cold gradient
-const HOT_ZONE_START = 0.76;	// share of H where the heated bottom band starts
+/* The bands are placed for the shipped bed, and they are also what render.js draws,
+   so the gradient on screen is the band the physics uses. The cold band has to reach
+   the top of the bed (the raft floating on the waterline bonds there) and the hot band
+   has to touch the floor: measured in experiments/balance.js, a hot band starting at
+   0.84 instead of 0.78 halves the number of hot beads rising past the bed mid-line. */
+const COLD_ZONE_END = 0.56;	// share of H cooled from the top, and drawn as the cold gradient
+const HOT_ZONE_START = 0.78;	// share of H where the heated bottom band starts
 const PAL_LIGHT = 6;		// sprite palette: 0..5 light beads, 6..11 deep
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -44,12 +53,14 @@ function createWorld(W, H) {
 	const world = {
 		W: 0, H: 0,
 		tank: { x0: 0, x1: 0, y0: 0, y1: 0 },
-		waterY: 0,
+		waterY: 0, waterFrac: WATER_FRAC,
 		grav: 1850,			// px/s^2, rescaled with screen height
 		rBar: DEFAULT_RADIUS, rMax: 24,
 		fillFraction: DEFAULT_FILL, typicalRadius: DEFAULT_RADIUS, massScale: 1,
-		sourceRate: 1, conductionRate: 1, sizeResponse: 0, archSize: 0, buoyancy: 1,
+		sourceRate: 1, conductionRate: 1, sizeResponse: DEFAULT_SIZE, archSize: DEFAULT_ARCH, buoyancy: 1, thermalLift: THERMAL_LIFT,
 		coldZoneEnd: COLD_ZONE_END, hotZoneStart: HOT_ZONE_START,
+		coldPower: COLD_POWER, hotPower: HOT_POWER,
+		linkStrength: LINK_STRENGTH, linkTempExp: LINK_TEMP_EXP, linkHeatMax: LINK_HEAT_MAX,
 		temperatureView: false,
 		n: 0, cap,
 		x: new Float64Array(cap), y: new Float64Array(cap),
@@ -84,7 +95,7 @@ function resizeWorld(world, W, H) {
 	const t = world.tank;
 	t.x0 = W * 0.055; t.x1 = W * 0.945;
 	t.y0 = H * 0.155; t.y1 = H * 0.935;
-	world.waterY = H * WATER_FRAC;
+	world.waterY = H * world.waterFrac;
 	world.grav = 1850 * clamp(H / 950, 0.75, 1.25);
 	initWave(world);
 	if (world.n > 0) spawnBed(world);
@@ -181,8 +192,17 @@ function pushBead(world, x, y, r, dens) {
 	return i;
 }
 
-/* Checkerboard hex bed: alternating bead sizes avoid large initial
-   overlaps while count is derived from requested water-body coverage. */
+/* Alternating big/small radii keep the bed mixed instead of one uniform lattice. */
+function bedRadius(world, index) {
+	const big = (index % 2) === 0;
+	return world.rBar * (big
+		? 1.05 + Math.random() * (SIZE_FACTOR_MAX - 1.05)
+		: 0.72 + Math.random() * 0.23);
+}
+
+/* Rows packed from each bead's own radius. The old fixed 2.4 rBar lattice was
+   narrower than the largest beads, so every spawn started interpenetrating and
+   the bed blew itself out of the water within a second. */
 function spawnBed(world) {
 	const t = world.tank;
 	world.n = 0;
@@ -196,23 +216,28 @@ function spawnBed(world) {
 	world.rBar = world.typicalRadius;
 	syncRMax(world);
 	world.acc = 0;
-	const innerW = t.x1 - t.x0;
 	const canvasArea = world.W * world.H;
 	const meanAreaFactor = Math.PI * 1.027;
 	const target = Math.min(world.cap, Math.max(1, Math.round(world.fillFraction * canvasArea / (meanAreaFactor * world.rBar * world.rBar))));
-	const sx = 2.4 * world.rBar, sy = 1.87 * world.rBar;
-	const cols = Math.max(1, Math.floor(innerW / sx));
-	const rows = Math.ceil(target / cols);
-
-	for (let row = 0; row < rows && world.n < target; row++) {
-		const y = t.y1 - (row + 0.6) * sy;
-		for (let col = 0; col < cols && world.n < target; col++) {
-			const x = t.x0 + (col + 0.5 + (row % 2 ? 0.5 : 0)) * sx;
-			if (x > t.x1 - 2) continue;
-			const big = ((col + row) % 2) === 0;
-			const r = world.rBar * (big ? 1.05 + Math.random() * (SIZE_FACTOR_MAX - 1.05) : 0.72 + Math.random() * 0.23);
-			pushBead(world, x + (Math.random() - 0.5) * 3, y + (Math.random() - 0.5) * 3, r, rollDensity());
+	const gap = world.rBar * 0.16;
+	const row = [];	// r, cx pairs for one row, reused across rows
+	let y = t.y1 - gap;
+	while (world.n < target) {
+		row.length = 0;
+		let x = t.x0 + gap, rowMax = 0;
+		for (;;) {
+			const r = bedRadius(world, world.n + row.length / 2);
+			if (x + 2 * r > t.x1 - gap) break;
+			row.push(r, x + r);
+			if (r > rowMax) rowMax = r;
+			x += 2 * r + gap;
 		}
+		if (row.length === 0) break;
+		y -= rowMax;
+		for (let k = 0; k < row.length && world.n < target; k += 2) {
+			pushBead(world, row[k + 1], y, row[k], rollDensity());
+		}
+		y -= rowMax + gap;
 	}
 	world.pointer.grab = -1;
 }
@@ -239,8 +264,41 @@ function setArchSize(world, value) {
 	world.archSize = clamp(value, -ARCH_SIZE_RANGE, ARCH_SIZE_RANGE);
 }
 
+function setColdZoneEnd(world, value) {
+	world.coldZoneEnd = clamp(value, 0.10, 0.80);
+}
+
+function setHotZoneStart(world, value) {
+	world.hotZoneStart = clamp(value, 0.40, 0.95);
+}
+
+function setColdPower(world, value) {
+	world.coldPower = clamp(value, 0, 4);
+}
+
+function setHotPower(world, value) {
+	world.hotPower = clamp(value, 0, 4);
+}
+
+function setBondStrength(world, value) {
+	world.linkStrength = clamp(value, 0, 1.5);
+}
+
+function setBondTempExp(world, value) {
+	world.linkTempExp = clamp(value, 0.5, 6);
+}
+
+function setWaterFrac(world, value) {
+	world.waterFrac = clamp(value, 0.25, 0.75);
+	world.waterY = world.H * world.waterFrac;
+}
+
 function setBuoyancy(world, value) {
 	world.buoyancy = clamp(value, 0, 2);
+}
+
+function setThermalLift(world, value) {
+	world.thermalLift = clamp(value, 0, 1);
 }
 
 function setTypicalRadius(world, value) {
@@ -251,7 +309,7 @@ function setTypicalRadius(world, value) {
 }
 
 function setFillFraction(world, value) {
-	world.fillFraction = clamp(value, 0.3, 0.7);
+	world.fillFraction = clamp(value, 0.08, 0.7);
 }
 
 function setMassScale(world, value) {
@@ -412,10 +470,11 @@ function collectThermalBonds(world) {
 	const pairA = world.pairA, pairB = world.pairB, pairR = world.pairR;
 	const createR2 = LINK_CREATE_RATIO * LINK_CREATE_RATIO;
 	const breakR2 = world.pairRF * world.pairRF;
+	const heatMax = world.linkHeatMax, strength = world.linkStrength, exponent = world.linkTempExp;
 	for (let k = 0; k < world.pairN; k++) {
 		const a = pairA[k], b = pairB[k];
 		const heat = (temp[a] + temp[b]) * 0.5;
-		if (heat >= LINK_HEAT_MAX) continue;
+		if (heat >= heatMax) continue;
 		const dx = x[b] - x[a], dy = y[b] - y[a];
 		const d2 = dx * dx + dy * dy;
 		const sumR = pairR[k], sumR2 = sumR * sumR;
@@ -427,8 +486,8 @@ function collectThermalBonds(world) {
 			rest = Math.max(1.01, Math.sqrt(d2 / sumR2));
 		}
 		storeLinkRest(world, key, rest);
-		const cold = clamp((LINK_HEAT_MAX - heat) / 0.40, 0, 1);
-		const stiffness = cold * cold * 0.72;
+		const cold = clamp((heatMax - heat) / LINK_HEAT_RAMP, 0, 1);
+		const stiffness = strength * Math.pow(cold, exponent);
 		const link = world.linkN++;
 		world.linkA[link] = a;
 		world.linkB[link] = b;
@@ -456,23 +515,22 @@ function compactActiveLinks(world) {
 
 function exchangeHeat(world, h) {
 	const sourceRate = world.sourceRate, conductionRate = world.conductionRate;
-	if (sourceRate <= 0 && conductionRate <= 0) return;
+	const coldRate = sourceRate * world.coldPower;
+	const hotRate = sourceRate * world.hotPower;
+	if (coldRate <= 0 && hotRate <= 0 && conductionRate <= 0) return;
 	const temp = world.temp, delta = world.heatDelta;
 	const topEnd = world.H * world.coldZoneEnd;
 	const bottomStart = world.H * world.hotZoneStart;
 	for (let i = 0; i < world.n; i++) {
-		if (sourceRate > 0) {
-			const py = world.y[i];
-			if (py < topEnd) {
-				const u = clamp(py / topEnd, 0, 1);
-				const weight = 1 - u;
-				const target = 0.02 + 0.18 * u;
-				temp[i] += (target - temp[i]) * (1 - Math.exp(-sourceRate * weight * h));
-			} else if (py > bottomStart) {
-				const u = clamp((py - bottomStart) / (world.H - bottomStart), 0, 1);
-				const weight = u * u * (3 - 2 * u);
-				temp[i] += (1 - temp[i]) * (1 - Math.exp(-sourceRate * weight * h));
-			}
+		const py = world.y[i];
+		/* The cold weight stays usable at the band's lower edge (0.4, not 0): a band that
+		   fades to nothing above the bed never cools its top layer fast enough to bond. */
+		if (coldRate > 0 && py < topEnd) {
+			const u = clamp(py / topEnd, 0, 1);
+			temp[i] += (0.02 + 0.18 * u - temp[i]) * (1 - Math.exp(-coldRate * (1 - 0.6 * u) * h));
+		} else if (hotRate > 0 && py > bottomStart) {
+			const u = clamp((py - bottomStart) / (world.H - bottomStart), 0, 1);
+			temp[i] += (1 - temp[i]) * (1 - Math.exp(-hotRate * u * u * (3 - 2 * u) * h));
 		}
 		delta[i] = 0;
 	}
@@ -620,6 +678,11 @@ function substep(world, h) {
 		for (let i = 0; i < n; i++) updateThermalSize(world, i);
 	}
 	const arch = world.archSize, buoyancy = world.buoyancy, rBarInv = 1 / world.rBar;
+	/* Heat thins a bead: the effective density of a fully hot bead is (1 - lift), of a
+	   fully cold one (1 + lift). This is what lets a heated floor overturn instead of
+	   only nudging neighbours through the size coupling. */
+	const thermal = buoyancy ? world.thermalLift * 2 : 0;
+	const temp = world.temp;
 	for (let i = 0; i < n; i++) {
 		px[i] = x[i]; py[i] = y[i];
 		const f = submergedFrac(y[i] - surf, r[i]);
@@ -627,7 +690,8 @@ function substep(world, h) {
 		const lift = arch && buoyancy
 			? clamp(Math.pow(r[i] * rBarInv, arch), 1 / ARCH_LIFT_LIMIT, ARCH_LIFT_LIMIT)
 			: 1;
-		vy[i] += grav * (1 - buoyancy * RHO_WATER * f * lift / dens[i]) * h;
+		const densEff = thermal ? dens[i] * (1 - thermal * (temp[i] - 0.5)) : dens[i];
+		vy[i] += grav * (1 - buoyancy * RHO_WATER * f * lift / densEff) * h;
 		const df = 1 / (1 + (DRAG_AIR + DRAG_WATER * f * f) * h);
 		vx[i] *= df; vy[i] *= df;
 		if (ptrOn) pointerForce(world, i, h);
@@ -727,13 +791,91 @@ function pointerUp(world, now) {
 	ptr.down = false;
 }
 
+/* ------------------------- settings ------------------------- */
+
+/* One flat object holds everything the page's controls set, so copying a scene and
+   pasting it back (or into another window) is exact. Keys are short on purpose: this
+   string gets pasted into chat. `readSettings` rounds, `applySettings` clamps through
+   the same setters the sliders use. */
+const SETTINGS = {
+	fill: DEFAULT_FILL,
+	radius: DEFAULT_RADIUS,
+	water: WATER_FRAC,
+	coldEnd: COLD_ZONE_END,
+	hotStart: HOT_ZONE_START,
+	coldPower: COLD_POWER,
+	hotPower: HOT_POWER,
+	lift: THERMAL_LIFT,
+	bonds: LINK_STRENGTH,
+	bondTemp: LINK_TEMP_EXP,
+	conduction: 1,
+	size: DEFAULT_SIZE,
+	arch: DEFAULT_ARCH,
+	buoyancy: 1,
+	mass: 1,
+	tempView: false,
+};
+
+const round = (value, digits) => Number(Number(value).toFixed(digits));
+
+function readSettings(world) {
+	return {
+		fill: round(world.fillFraction, 3),
+		radius: Math.round(world.typicalRadius),
+		water: round(world.waterFrac, 3),
+		coldEnd: round(world.coldZoneEnd, 2),
+		hotStart: round(world.hotZoneStart, 2),
+		coldPower: round(world.coldPower, 2),
+		hotPower: round(world.hotPower, 2),
+		lift: round(world.thermalLift, 2),
+		bonds: round(world.linkStrength, 2),
+		bondTemp: round(world.linkTempExp, 1),
+		conduction: round(world.conductionRate, 2),
+		size: round(world.sizeResponse, 2),
+		arch: round(world.archSize, 1),
+		buoyancy: round(world.buoyancy, 2),
+		mass: round(world.massScale, 2),
+		tempView: !!world.temperatureView,
+	};
+}
+
+/* Tolerant by design: unknown keys are ignored and missing keys keep their value, so a
+   hand-edited or older string still applies. Returns the keys it did not recognise. */
+function applySettings(world, settings) {
+	const known = Object.keys(SETTINGS);
+	const ignored = [];
+	for (const key of Object.keys(settings || {})) if (known.indexOf(key) < 0) ignored.push(key);
+	const value = key => (settings && typeof settings[key] === "number" && isFinite(settings[key]) ? settings[key] : undefined);
+	if (value("fill") !== undefined) setFillFraction(world, value("fill"));
+	if (value("radius") !== undefined) setTypicalRadius(world, value("radius"));
+	if (value("water") !== undefined) setWaterFrac(world, value("water"));
+	world.coldZoneEnd = value("coldEnd") !== undefined ? clamp(value("coldEnd"), 0.10, 0.80) : world.coldZoneEnd;
+	world.hotZoneStart = value("hotStart") !== undefined ? clamp(value("hotStart"), 0.40, 0.95) : world.hotZoneStart;
+	if (value("coldPower") !== undefined) setColdPower(world, value("coldPower"));
+	if (value("hotPower") !== undefined) setHotPower(world, value("hotPower"));
+	if (value("lift") !== undefined) setThermalLift(world, value("lift"));
+	if (value("bonds") !== undefined) setBondStrength(world, value("bonds"));
+	if (value("bondTemp") !== undefined) setBondTempExp(world, value("bondTemp"));
+	if (value("conduction") !== undefined) setConductionRate(world, value("conduction"));
+	if (value("size") !== undefined) setSizeResponse(world, value("size"));
+	if (value("arch") !== undefined) setArchSize(world, value("arch"));
+	if (value("buoyancy") !== undefined) setBuoyancy(world, value("buoyancy"));
+	if (value("mass") !== undefined) setMassScale(world, value("mass"));
+	if (settings && typeof settings.tempView === "boolean") world.temperatureView = settings.tempView;
+	return ignored;
+}
+
 if (typeof module !== "undefined" && module.exports) {
 	module.exports = {
 		createWorld, resizeWorld, stepWorld, substep,
 		spawnBed, addBead, splash, rollDensity, submergedFrac,
 		setSourceRate, setConductionRate, setSizeResponse, setArchSize, setBuoyancy,
-		setTypicalRadius, setFillFraction, setMassScale,
+		setTypicalRadius, setFillFraction, setMassScale, setWaterFrac,
+		setColdZoneEnd, setHotZoneStart, setColdPower, setHotPower, setThermalLift,
+		setBondStrength, setBondTempExp,
+		SETTINGS, readSettings, applySettings,
 		disturb, pickBead, pointerMove, pointerDown, pointerUp,
-		SPAWN_CAP, WATER_FRAC, SUBSTEP, COLD_ZONE_END, HOT_ZONE_START,
+		SPAWN_CAP, WATER_FRAC, DEFAULT_FILL, DEFAULT_RADIUS, SUBSTEP,
+		COLD_ZONE_END, HOT_ZONE_START, LINK_HEAT_MAX, LINK_STRENGTH, LINK_TEMP_EXP, THERMAL_LIFT,
 	};
 }

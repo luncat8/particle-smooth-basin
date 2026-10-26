@@ -1,0 +1,17 @@
+0.4.0 sparse convecting scene · tunable settings · node v22.22.3 linux x86_64 · 2026-10-26
+node checks, 1280x800, seeded (six checks: smoke, thermal, bench, thermal-zone, settings, harness)
+smoke      boot from disagreeing markup, six presets, live controls, copy/paste/reset, DPR change, ?profile=1
+settings   read -> apply -> read fixed point · partial paste · unknown keys reported · clamping · 10 s finite
+           shipped scene: 340 beads, no NaN, max|v| 62 px/s, 480+ active links
+thermal    rates, sizing, buoyancy, size coupling, thawing links, pointer, wave steps, coverage
+bench      0.30 ms/frame at n=356 over 60 s sim · near-cap 1500 2.10 ms/frame · peak pairs 3683, peak links 2036
+           equilibrium: dens 0.5 -> frac 0.500 · dens 2.0 -> frac 1.000 (on floor)
+balance    shipped, 40 s: n=340 bedTop 385 water 240 (1/340 above the line) links 327/438/459/484
+           cold 223 top/bottom T 0.15/0.95 · hot beads rising 5.5/s · stir 503 -> recover 480 · maxV 62 · 0.34 ms
+           rejected: fill 0.22 (bed top 39 px above the line), water 0.42 (bed 73 px out), hotStart 0.84 (4.0/s up)
+zone sweep 480 frames, source 1x: shipped cold 0.56 / hot 0.78 -> 365 avg / 451 max links, 205 cold, 344 coldBonds,
+           top/bottom 0.12/0.89, 0.30 ms · old 0.24 -> 95/143 links, 39 cold
+source rate at the shipped band: 0x -> 0 links · 0.5x 339 · 1x 357 · 2x 376 · 4x 452
+harness    8 checks ok (thermal-zone: cold 205/340 · 457 bonds · top 0.12 bottom 0.95 · 0 above water · bed top 241 px)
+           12 perf rows full / 3 quick (shipped first) · 13 element ids · save path unchanged
+not measured here: canvas pixels and real frame times — no browser in this sandbox; run run_tests.py on a real machine
