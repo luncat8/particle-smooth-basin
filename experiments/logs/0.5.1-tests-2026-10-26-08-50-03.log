@@ -1,0 +1,191 @@
+hydrogel basin tests 0.5.1 · 2026-10-26 08:50 · node 22.15.1 · win x86_64
+
+> node experiments/smoke.js
+settings {"fill":0.4,"radius":14,"water":0.3,"coldEnd":0.3,"hotStart":0.75,"coldPower":0.7,"hotPower":2,"lift":0.3,"bonds":0.4,"bondTemp":2.5,"conduction":0.25,"feed":0.2,"size":-1,"arch":-10,"buoyancy":0.2,"mass":1,"view":"temp"}
+settings {"fill":0.4,"radius":14,"water":0.3,"coldEnd":0.3,"hotStart":0.75,"coldPower":0.7,"hotPower":2,"lift":0.3,"bonds":0.4,"bondTemp":2.5,"conduction":0.25,"feed":0.2,"size":-1,"arch":-10,"buoyancy":0.2,"mass":1,"view":"temp"}
+PROFILE 300F · FRAME p50 2.50 p95 2.50 · SIM p50 1.25 p95 1.25 · RENDER p50 1.25 p95 1.25 MS
+settings {"fill":0.4,"radius":14,"water":0.38,"coldEnd":0.62,"hotStart":0.75,"coldPower":1.5,"hotPower":0.5,"lift":0.5,"bonds":0.4,"bondTemp":2.8,"conduction":1.8,"feed":0.6,"size":1,"arch":-4,"buoyancy":1.1,"mass":1,"view":"heat"}
+settings {"fill":0.3,"radius":14,"water":0.38,"coldEnd":0.7,"hotStart":0.75,"coldPower":1.5,"hotPower":0.5,"lift":0.6,"bonds":0.4,"bondTemp":4,"conduction":1.8,"feed":0.6,"size":0.5,"arch":3,"buoyancy":1.1,"mass":1,"view":"density"} · ignored foreign
+settings {"fill":0.4,"radius":14,"water":0.3,"coldEnd":0.3,"hotStart":0.75,"coldPower":0.7,"hotPower":2,"lift":0.3,"bonds":0.4,"bondTemp":2.5,"conduction":0.25,"feed":0.2,"size":-1,"arch":-10,"buoyancy":0.2,"mass":1,"view":"temp"}
+settings {"fill":0.4,"radius":14,"water":0.3,"coldEnd":0.3,"hotStart":0.75,"coldPower":0.7,"hotPower":2,"lift":0.3,"bonds":0.4,"bondTemp":2.5,"conduction":0.25,"feed":0.2,"size":-1,"arch":-10,"buoyancy":0.2,"mass":1,"view":"temp"}
+settings {"fill":0.3,"radius":14,"water":0.3,"coldEnd":0.3,"hotStart":0.75,"coldPower":1,"hotPower":2,"lift":0.8,"bonds":0.4,"bondTemp":2.5,"conduction":0.1,"feed":0.05,"size":-1,"arch":-4,"buoyancy":0.55,"mass":1,"view":"temp"}
+settings {"fill":0.4,"radius":14,"water":0.3,"coldEnd":0.4,"hotStart":0.75,"coldPower":1,"hotPower":2,"lift":0.5,"bonds":0.5,"bondTemp":2,"conduction":1,"feed":0.1,"size":1,"arch":2,"buoyancy":0.85,"mass":1,"view":"temp"}
+settings {"fill":0.56,"radius":14,"water":0.3,"coldEnd":0.4,"hotStart":0.75,"coldPower":1,"hotPower":2,"lift":0.7,"bonds":0.9,"bondTemp":1.5,"conduction":1.9,"feed":0.1,"size":-1,"arch":-5,"buoyancy":0.3,"mass":1,"view":"temp"}
+settings {"fill":0.21,"radius":14,"water":0.3,"coldEnd":0.56,"hotStart":0.78,"coldPower":2.5,"hotPower":2.5,"lift":0.4,"bonds":0.72,"bondTemp":2,"conduction":1,"feed":0.15,"size":-0.35,"arch":-2.5,"buoyancy":1,"mass":1,"view":"density"}
+settings {"fill":0.21,"radius":14,"water":0.3,"coldEnd":0.56,"hotStart":0.78,"coldPower":2.5,"hotPower":2.5,"lift":0.4,"bonds":0.72,"bondTemp":2,"conduction":1,"feed":0.15,"size":-1,"arch":0,"buoyancy":0.9,"mass":1,"view":"density"}
+settings {"fill":0.21,"radius":14,"water":0.3,"coldEnd":0.56,"hotStart":0.78,"coldPower":2.5,"hotPower":2.5,"lift":0.4,"bonds":0.72,"bondTemp":2,"conduction":1,"feed":0.15,"size":0,"arch":4,"buoyancy":0.6,"mass":1,"view":"density"}
+settings {"fill":0.21,"radius":14,"water":0.3,"coldEnd":0.56,"hotStart":0.78,"coldPower":2.5,"hotPower":2.5,"lift":0.4,"bonds":0.72,"bondTemp":2,"conduction":1,"feed":0.15,"size":-1,"arch":-4,"buoyancy":0.55,"mass":1,"view":"density"}
+settings {"fill":0.21,"radius":14,"water":0.3,"coldEnd":0.56,"hotStart":0.78,"coldPower":2.5,"hotPower":2.5,"lift":0.4,"bonds":0.72,"bondTemp":2,"conduction":1,"feed":0.15,"size":1,"arch":4,"buoyancy":0.55,"mass":1,"view":"density"}
+settings {"fill":0.21,"radius":14,"water":0.3,"coldEnd":0.56,"hotStart":0.78,"coldPower":2.5,"hotPower":2.5,"lift":0.4,"bonds":0.72,"bondTemp":2,"conduction":1,"feed":0.15,"size":-1,"arch":4,"buoyancy":0.55,"mass":1,"view":"density"}
+settings {"fill":0.21,"radius":14,"water":0.3,"coldEnd":0.56,"hotStart":0.78,"coldPower":2.5,"hotPower":2.5,"lift":0.4,"bonds":0.72,"bondTemp":2,"conduction":1,"feed":0.15,"size":1,"arch":-4,"buoyancy":0.55,"mass":1,"view":"density"}
+browser bundle smoke: boot, render, five scene and six coupling presets, live controls, band drag, DPR change, pointer cancel, clipboard settings paste/copy/reset and ?profile=1 passed
+  ok · 1.3 s
+
+> node experiments/thermal.js
+thermal checks: rates, sizing, buoyancy, size coupling, thawing links, pointer, wave steps, coverage and the heat feed passed
+  ok · 0.1 s
+
+> node experiments/bench.js
+0.2.3 review bench  node=v22.15.1  1280x800  seeded
+n=648  rBar=14.0
+throughput: 0.51 ms/frame (1949 fps headroom) at 3600 frames / 60 s sim
+after settle: NaN=0  max|v|=538  mean|v|=72.1
+distribution: above line=114  fully submerged=481  mean sub. frac=0.78
+pairs: max per substep=1650  (buffer cap=12000)
+links: max effective=366  max cold=986  (buffer cap=12000)
+submergedFrac: f(0)=0.5 f(full)=1 f(none)=0 f(q=-.5)=0.1955  ok=true
+after splash: NaN=0  max|v|=415
+arch-size stress (a=10, size=-1, buoyancy=1.5): NaN=0  max|v|=177
+profile near-cap: n=1500  1.13 ms/frame  peak pairs=3800  peak links=359 / 12000
+equilibrium: dens=0.5 -> frac=0.500 (want ~0.500)   dens=2.0 -> frac=1.000 (want 1.000, on floor)
+  ok · 2.9 s
+
+> node experiments/thermal-zone.js
+thermal zone sweep · 1280x800 · 480 frames · shipped scene · source 1x · conduction 0.25x · seeded
+candidate           links avg/max  cold   coldBonds  churn  Tmin/mean/max     top/bottom   stir   recover  maxV  ms/frame
+old 0.24            0/0            101    0          0.0    0.35/0.77/1.00    0.50/0.95    7      61       593   0.57
+cold 0.36           130/212        187    25         13.0   0.24/0.75/1.00    0.39/1.00    227    137      72    0.55
+shipped             36/65          147    8          4.3    0.26/0.77/1.00    0.34/0.98    74     100      138   0.52
+cold 0.44           270/343        210    2          17.6   0.19/0.74/1.00    0.39/1.00    356    312      25    0.55
+cold 0.48           361/436        220    16         19.9   0.22/0.73/1.00    0.35/1.00    441    346      28    0.56
+cold 0.44 hot 0.70  257/294        149    7          16.1   0.22/0.81/1.00    0.39/1.00    285    151      112   0.55
+cold 0.40 hot 0.70  184/228        139    12         12.4   0.21/0.82/1.00    0.62/1.00    227    108      579   0.54
+cold 0.44 hot 0.82  281/372        257    5          19.5   0.19/0.67/1.00    0.38/0.97    392    440      38    0.56
+cold = beads able to bond (T<0.483) · coldBonds = links whose pair mean T<0.3 · churn = mean |Δlinks| per 30-frame sample · stir = links 0.5 s after a splash
+
+source rate at the shipped bands (cold 0.3 / hot 0.75, both offsets scaled)
+candidate           links avg/max  cold   coldBonds  churn  Tmin/mean/max     top/bottom   stir   recover  maxV  ms/frame
+rate 0x             0/0            0      0          0.0    0.50/0.50/0.50    0.50/0.50    0      0        29    0.53
+rate 0.5x           28/65          116    0          4.1    0.32/0.71/1.00    0.39/0.92    65     97       179   0.52
+rate 1x             36/65          147    8          4.3    0.26/0.77/1.00    0.34/0.98    74     100      138   0.52
+rate 2x             229/276        118    31         12.3   0.23/0.81/1.00    0.82/0.91    202    221      574   0.54
+rate 4x             311/357        129    194        11.4   0.11/0.82/1.00    0.70/0.93    315    242      998   0.56
+rate 0x must leave the bed neutral (no bonds): the source is the only way a bead leaves T=0.5
+  ok · 5.7 s
+
+> node experiments/heat-feed.js
+heat feed sweep · 1280x800 · 15 s · seed 0x9e3779b9 · shipped settings
+scene       feed  meanT 5/10/end    cold  links  top/bottom   up/down   |f-band|  written  clamped  f min/max    ms/frame
+thermal     0.00    0.70/0.75/0.81    82    20     0.82/0.89    9.3/0.3   0.000     0%       0%       0.03/0.98    0.49
+thermal     own 0.200.71/0.78/0.82    67    63     0.71/0.98    32.1/0.2  0.014     0%       0%       0.03/0.98    0.53
+heat        0.00    0.57/0.60/0.63    119   161    0.57/0.72    38.6/4.6  0.000     0%       0%       0.03/0.98    0.33
+heat        own 0.050.57/0.60/0.60    143   272    0.51/0.56    36.4/5.3  0.002     0%       0%       0.03/0.98    0.38
+thermalGrow 0.00    0.48/0.43/0.40    459   1171   0.34/0.59    16.4/17.4 0.000     0%       0%       0.02/0.98    0.46
+thermalGrow own 0.100.48/0.40/0.39    457   1177   0.33/0.61    19.2/22.1 0.006     0%       0%       0.02/0.98    0.51
+balanced    0.00    0.59/0.63/0.62    321   905    0.12/0.79    7.4/15.9  0.000     0%       0%       0.02/0.98    0.85
+balanced    own 0.100.59/0.64/0.65    301   839    0.20/0.76    12.3/17.1 0.010     0%       0%       0.02/0.98    0.90
+sparseRaft  0.00    0.47/0.45/0.49    188   449    0.18/1.00    13.5/5.8  0.000     0%       0%       0.01/0.97    0.18
+sparseRaft  own 0.150.48/0.44/0.50    189   451    0.17/1.00    14.3/5.8  0.005     0%       0%       0.01/0.97    0.23
+meanT = mean bead temperature at 5/10/end s · cold = beads below 0.483 · links = effective bonds · up/down = hot beads carried above the bed mid-line and cold ones below it, per second · |f-band| = mean cell distance from the band target · written = cells carried > 0.1 away · clamped = cells sitting on 0 or 1 · f min/max = the field's range
+heat feed checks: 5 scenes · worst drift 0.031 · crust keeps 82% of its cold beads · worst cost +0.05 ms/frame · feed 0 is the bands-only field · passed
+  ok · 5.0 s
+
+> node experiments/settings.js
+settings checks: round trip, partial paste, unknown keys, clamping, live fields, view mode, presets, heat map geometry, 10 s stability, preset overturning and the heat feed passed
+  ok · 4.6 s
+
+> node experiments/harness.js
+checks: boot=ok · canvas=ok · invariants=ok · interaction=ok · resize=ok · thermal=ok · thermal-zone=ok · heat-feed=ok · profile=ok
+harness lint: tests.html script compiles, 17 element ids, 17 referenced ids present, 9 checks and 1 perf case ran in the sandbox
+sandbox page path: quick run in 6.3 s · saved once · second Save posts nothing · duplicate response accepted as saved
+checks: boot=ok canvas=ok invariants=ok interaction=ok resize=ok thermal=ok thermal-zone=ok heat-feed=ok profile=ok
+thermal zone: cold 147/648 · 65 bonds · top 0.33 bottom 0.98 · 5 above water · bed top 254 px
+perf row: shipped n=648 frames=5 frame p50 4.44 p95 6.36 · sim p95 5.51 · render p95 0.85
+not validated here: canvas pixels and real frame times — open tests.html for those
+  ok · 11.8 s
+
+--- browser tests (tests.html) ---
+chrome 151 · win x86_64 · dpr 1.25 · hw 20 · gpu nvidia · webgpu nvidia · isolated yes · timer 5.0 us
+browser tests 0.5.1 · 2026-10-26 08:50 · full matrix · budget 16.7 ms/frame
+check boot ok · n=648 · wave 161 cols · tank 1139 px
+check canvas ok · beads repaint 31.6% of 480x320 pixels
+check invariants ok · 120 frames · peak pairs 1551 / links 17 within 12000 · no NaN
+check interaction ok · click +1 bead · cancel +0 · drag 106 px · splash h 26.0
+check resize ok · 700x420@2x → 186 beads, restored n=648 at 1280x800
+check thermal ok · temp 0.19-1.00 · r 8.4-25.1 · hot/cold size 9.9/16.8
+check thermal-zone ok · cold 148/648 · 66 bonds · top 0.33 bottom 0.98 · 5 above water · bed top 255 px
+check heat-feed ok · feed 0 0.50 · hot 0.74 · cold 0.26 · field bounded
+check profile ok · one report at 5 frames · p50 3.00 p95 5.00
+perf shipped · n=648 links=6 · frame p50 1.14 p95 1.49 · sim p95 0.93 · render p95 0.58 · rAF p95 5.59
+perf light dpr1 · n=302 links=29 · frame p50 0.66 p95 0.99 · sim p95 0.52 · render p95 0.48 · rAF p95 5.60
+perf light dpr2 · n=302 links=29 · frame p50 0.63 p95 0.75 · sim p95 0.43 · render p95 0.34 · rAF p95 5.61
+perf light dpr1-temp · n=302 links=38 · frame p50 0.63 p95 1.06 · sim p95 0.45 · render p95 0.62 · rAF p95 5.60
+perf default dpr1 · n=810 links=407 · frame p50 1.43 p95 1.53 · sim p95 0.88 · render p95 0.65 · rAF p95 5.60
+perf default dpr2 · n=810 links=406 · frame p50 1.43 p95 1.52 · sim p95 0.88 · render p95 0.65 · rAF p95 5.60
+perf default dpr1-temp · n=810 links=412 · frame p50 1.43 p95 1.70 · sim p95 1.08 · render p95 0.64 · rAF p95 5.60
+perf cap dpr1 · n=1500 links=579 · frame p50 2.47 p95 2.68 · sim p95 1.54 · render p95 1.10 · rAF p95 5.59
+perf cap dpr2 · n=1500 links=590 · frame p50 2.41 p95 2.58 · sim p95 1.50 · render p95 1.10 · rAF p95 5.59
+perf cap dpr1-temp · n=1500 links=571 · frame p50 2.37 p95 2.55 · sim p95 1.48 · render p95 1.07 · rAF p95 5.59
+perf cold-links · n=810 links=598 · frame p50 1.47 p95 1.76 · sim p95 1.10 · render p95 0.66 · rAF p95 5.60
+perf stirred-cap · n=1500 links=1333 · frame p50 2.51 p95 2.62 · sim p95 1.52 · render p95 1.11 · rAF p95 5.59
+perf heat cap · n=1500 links=572 · frame p50 2.37 p95 2.46 · sim p95 1.40 · render p95 1.07 · rAF p95 5.59
+RESULT pass · checks 9/9 · perf 13/13 within 16.7 ms · worst p95 2.68 ms (cap dpr1) · worst rAF 5.61 ms (light dpr2)
+wall 15.9 s · tab must stay visible for honest frames
+
+--- browser tests (tests.html) ---
+chrome 151 · win x86_64 · dpr 1.25 · hw 20 · gpu nvidia · webgpu nvidia · isolated yes · timer 5.0 us
+browser tests 0.5.1 · 2026-10-26 08:51 · couplings matrix · budget 16.7 ms/frame · seed 0x9e3779b9 · 8 s per case
+check boot ok · n=648 · wave 161 cols · tank 1139 px
+check canvas ok · beads repaint 92.0% of 480x320 pixels
+check invariants ok · 120 frames · peak pairs 1591 / links 24 within 12000 · no NaN
+check interaction ok · click +1 bead · cancel +0 · drag 146 px · splash h 25.9
+check resize ok · 700x420@2x → 186 beads, restored n=648 at 1280x800
+check thermal ok · temp 0.20-1.00 · r 8.4-25.2 · hot/cold size 9.9/16.7
+check thermal-zone ok · cold 148/648 · 66 bonds · top 0.33 bottom 0.98 · 5 above water · bed top 255 px
+check heat-feed ok · feed 0 0.50 · hot 0.74 · cold 0.26 · field bounded
+check profile ok · one report at 5 frames · p50 3.00 p95 5.00
+coupling thermal / baseline · feed=0.20 n=648 cold=134 links=20 meanT=0.78 above=0 · frame p95 1.32 · sim p95 0.70 · render p95 0.57 · rAF p95 5.61 · within budget
+coupling thermal / shrinkFlow · feed=0.20 n=648 cold=139 links=136 meanT=0.76 above=19 · Δcold +5 Δlinks +116 ΔT -0.02 · frame p95 1.58 · sim p95 0.85 · render p95 0.75 · rAF p95 5.61 · within budget
+coupling thermal / bigFloats · feed=0.20 n=648 cold=187 links=145 meanT=0.67 above=21 · Δcold +53 Δlinks +125 ΔT -0.11 · frame p95 1.24 · sim p95 0.68 · render p95 0.57 · rAF p95 5.61 · within budget
+coupling thermal / shrinkConvection · feed=0.20 n=648 cold=91 links=91 meanT=0.72 above=143 · Δcold -43 Δlinks +71 ΔT -0.06 · frame p95 1.16 · sim p95 0.61 · render p95 0.56 · rAF p95 5.64 · within budget
+coupling thermal / growConvection · feed=0.20 n=648 cold=291 links=582 meanT=0.55 above=59 · Δcold +157 Δlinks +562 ΔT -0.23 · frame p95 1.35 · sim p95 0.77 · render p95 0.59 · rAF p95 5.61 · within budget
+coupling thermal / shrinkStable · feed=0.20 n=648 cold=152 links=122 meanT=0.78 above=26 · Δcold +18 Δlinks +102 ΔT -0.00 · frame p95 1.52 · sim p95 0.89 · render p95 0.62 · rAF p95 5.61 · within budget
+coupling thermal / growStable · feed=0.20 n=648 cold=169 links=170 meanT=0.61 above=33 · Δcold +35 Δlinks +150 ΔT -0.18 · frame p95 1.56 · sim p95 0.88 · render p95 0.63 · rAF p95 5.61 · within budget
+coupling heat / baseline · feed=0.05 n=486 cold=177 links=311 meanT=0.58 above=78 · frame p95 1.35 · sim p95 0.68 · render p95 0.71 · rAF p95 5.60 · within budget
+coupling heat / shrinkFlow · feed=0.05 n=486 cold=140 links=290 meanT=0.62 above=103 · Δcold -37 Δlinks -21 ΔT +0.03 · frame p95 1.22 · sim p95 0.63 · render p95 0.59 · rAF p95 5.61 · within budget
+coupling heat / bigFloats · feed=0.05 n=486 cold=123 links=254 meanT=0.70 above=103 · Δcold -54 Δlinks -57 ΔT +0.11 · frame p95 1.67 · sim p95 0.55 · render p95 1.14 · rAF p95 5.61 · within budget
+coupling heat / shrinkConvection · feed=0.05 n=486 cold=177 links=311 meanT=0.58 above=78 · Δcold +0 Δlinks +0 ΔT +0.00 · frame p95 1.11 · sim p95 0.68 · render p95 0.52 · rAF p95 5.60 · within budget
+coupling heat / growConvection · feed=0.05 n=486 cold=266 links=512 meanT=0.50 above=22 · Δcold +89 Δlinks +201 ΔT -0.09 · frame p95 1.09 · sim p95 0.62 · render p95 0.48 · rAF p95 5.62 · within budget
+coupling heat / shrinkStable · feed=0.05 n=486 cold=57 links=96 meanT=0.85 above=24 · Δcold -120 Δlinks -215 ΔT +0.27 · frame p95 1.47 · sim p95 0.65 · render p95 0.81 · rAF p95 5.65 · within budget
+coupling heat / growStable · feed=0.05 n=486 cold=41 links=34 meanT=0.62 above=26 · Δcold -136 Δlinks -277 ΔT +0.03 · frame p95 1.86 · sim p95 0.69 · render p95 1.20 · rAF p95 5.63 · within budget
+coupling thermalGrow / baseline · feed=0.10 n=648 cold=417 links=1074 meanT=0.40 above=97 · frame p95 1.30 · sim p95 0.70 · render p95 0.60 · rAF p95 5.61 · within budget
+coupling thermalGrow / shrinkFlow · feed=0.10 n=648 cold=210 links=503 meanT=0.72 above=4 · Δcold -207 Δlinks -571 ΔT +0.32 · frame p95 1.27 · sim p95 0.70 · render p95 0.56 · rAF p95 5.61 · within budget
+coupling thermalGrow / bigFloats · feed=0.10 n=648 cold=259 links=612 meanT=0.63 above=9 · Δcold -158 Δlinks -462 ΔT +0.23 · frame p95 1.49 · sim p95 0.83 · render p95 0.63 · rAF p95 5.62 · within budget
+coupling thermalGrow / shrinkConvection · feed=0.10 n=648 cold=264 links=690 meanT=0.60 above=114 · Δcold -153 Δlinks -384 ΔT +0.20 · frame p95 2.16 · sim p95 1.06 · render p95 1.01 · rAF p95 5.61 · within budget
+coupling thermalGrow / growConvection · feed=0.10 n=648 cold=397 links=1024 meanT=0.44 above=110 · Δcold -20 Δlinks -50 ΔT +0.04 · frame p95 1.34 · sim p95 0.76 · render p95 0.61 · rAF p95 5.61 · within budget
+coupling thermalGrow / shrinkStable · feed=0.10 n=648 cold=239 links=564 meanT=0.73 above=8 · Δcold -178 Δlinks -510 ΔT +0.33 · frame p95 1.31 · sim p95 0.67 · render p95 0.58 · rAF p95 5.62 · within budget
+coupling thermalGrow / growStable · feed=0.10 n=648 cold=281 links=648 meanT=0.54 above=6 · Δcold -136 Δlinks -426 ΔT +0.14 · frame p95 1.40 · sim p95 0.85 · render p95 0.58 · rAF p95 5.60 · within budget
+coupling balanced / baseline · feed=0.10 n=907 cold=370 links=1084 meanT=0.64 above=58 · frame p95 1.98 · sim p95 1.25 · render p95 0.77 · rAF p95 5.63 · within budget
+coupling balanced / shrinkFlow · feed=0.10 n=907 cold=385 links=1109 meanT=0.61 above=113 · Δcold +15 Δlinks +25 ΔT -0.03 · frame p95 2.02 · sim p95 1.24 · render p95 0.78 · rAF p95 5.61 · within budget
+coupling balanced / bigFloats · feed=0.10 n=907 cold=490 links=1426 meanT=0.51 above=145 · Δcold +120 Δlinks +342 ΔT -0.13 · frame p95 1.94 · sim p95 1.17 · render p95 0.78 · rAF p95 5.60 · within budget
+coupling balanced / shrinkConvection · feed=0.10 n=907 cold=362 links=1031 meanT=0.61 above=105 · Δcold -8 Δlinks -53 ΔT -0.03 · frame p95 1.98 · sim p95 1.22 · render p95 0.77 · rAF p95 5.61 · within budget
+coupling balanced / growConvection · feed=0.10 n=907 cold=682 links=1910 meanT=0.32 above=145 · Δcold +312 Δlinks +826 ΔT -0.32 · frame p95 2.09 · sim p95 1.28 · render p95 0.80 · rAF p95 5.61 · within budget
+coupling balanced / shrinkStable · feed=0.10 n=907 cold=415 links=1199 meanT=0.61 above=64 · Δcold +45 Δlinks +115 ΔT -0.03 · frame p95 2.00 · sim p95 1.23 · render p95 0.77 · rAF p95 5.61 · within budget
+coupling balanced / growStable · feed=0.10 n=907 cold=539 links=1586 meanT=0.44 above=224 · Δcold +169 Δlinks +502 ΔT -0.20 · frame p95 1.76 · sim p95 0.99 · render p95 0.78 · rAF p95 5.60 · within budget
+coupling sparseRaft / baseline · feed=0.15 n=340 cold=212 links=507 meanT=0.45 above=0 · frame p95 1.13 · sim p95 0.55 · render p95 0.63 · rAF p95 5.62 · within budget
+coupling sparseRaft / shrinkFlow · feed=0.15 n=340 cold=158 links=345 meanT=0.57 above=0 · Δcold -54 Δlinks -162 ΔT +0.12 · frame p95 0.82 · sim p95 0.42 · render p95 0.40 · rAF p95 5.64 · within budget
+coupling sparseRaft / bigFloats · feed=0.15 n=340 cold=150 links=308 meanT=0.62 above=3 · Δcold -62 Δlinks -199 ΔT +0.17 · frame p95 0.95 · sim p95 0.45 · render p95 0.50 · rAF p95 5.64 · within budget
+coupling sparseRaft / shrinkConvection · feed=0.15 n=340 cold=130 links=259 meanT=0.62 above=2 · Δcold -82 Δlinks -248 ΔT +0.17 · frame p95 0.86 · sim p95 0.48 · render p95 0.38 · rAF p95 5.61 · within budget
+coupling sparseRaft / growConvection · feed=0.15 n=340 cold=231 links=554 meanT=0.44 above=2 · Δcold +19 Δlinks +47 ΔT -0.01 · frame p95 0.94 · sim p95 0.53 · render p95 0.38 · rAF p95 5.63 · within budget
+coupling sparseRaft / shrinkStable · feed=0.15 n=340 cold=82 links=158 meanT=0.78 above=45 · Δcold -130 Δlinks -349 ΔT +0.33 · frame p95 0.85 · sim p95 0.41 · render p95 0.46 · rAF p95 5.61 · within budget
+coupling sparseRaft / growStable · feed=0.15 n=340 cold=117 links=235 meanT=0.63 above=19 · Δcold -95 Δlinks -272 ΔT +0.17 · frame p95 0.87 · sim p95 0.46 · render p95 0.41 · rAF p95 5.61 · within budget
+RESULT pass · checks 9/9 · perf 35/35 within 16.7 ms · worst p95 2.16 ms (thermalGrow / shrinkConvection) · worst rAF 5.65 ms (heat / shrinkStable)
+wall 93.9 s · tab must stay visible for honest frames
+
+
+
+>node experiments/balance.js 20
+balance sweep · 1280x800 · 20 s · seeded
+candidate         n     bedTop  water  free 2/4/8/end    above     coldEnd  links 2/4/8/end     cold  top/bottom T  flux    hotUp  moved      cross  stir/rec   maxV  up/down    ms/frame
+thermal           648   87      240    102/147/186/-93   136/648   240px    0/5/19/301          138   0.60/0.92     2.8     51%    222px/94%  58.0   323/269    443   27.8/0.5   0.56
+heat              486   277     240    -6/-64/-45/-99    101/486   240px    6/204/203/354       154   0.34/0.90     2.2     47%    209px/94%  70.7   382/468    202   29.5/3.8   0.40
+thermalGrow       648   87      240    9/-109/-85/-59    45/648    320px    566/846/1073/1078   425   0.37/0.61     9.4     72%    208px/95%  73.3   1109/1098  668   21.4/22.1  0.52
+balanced          907   -176    240    -29/-15/-56/-118  65/907    320px    1486/1317/1086/924  331   0.15/0.84     14.3    47%    355px/97%  93.8   941/1002   281   19.4/23.4  0.90
+sparseRaft        340   428     240    93/28/170/131     0/340     448px    306/486/507/503     212   0.15/0.94     2.2     33%    78px/82%   0.7    511/498    61    11.3/4.1   0.24
+shrinkFlow        648   87      240    25/4/-6/-51       63/648    240px    29/70/138/169       81    0.73/1.00     2.1     57%    217px/91%  28.6   178/185    91    12.1/0.0   0.44
+bigFloats         648   87      240    7/-4/-14/-51      57/648    240px    27/73/145/244       144   0.48/0.99     0.3     52%    176px/90%  30.9   253/249    360   3.3/0.0    0.41
+shrinkConvection  648   87      240    67/9/-58/-159     183/648   240px    3/9/81/527          214   0.37/1.00     1.2     48%    239px/96%  70.5   552/384    364   26.8/0.6   0.53
+growConvection    648   87      240    -10/-210/-31/-143 208/648   240px    31/419/581/611      294   0.39/0.75     5.6     65%    227px/94%  85.0   624/656    529   21.3/11.6  0.58
+shrinkStable      648   87      240    -4/-5/-17/-37     37/648    240px    29/76/126/152       81    0.26/1.00     -0.1    44%    204px/92%  25.3   159/165    27    0.1/0.0    0.50
+growStable        648   87      240    2/-2/-13/-73      144/648   240px    9/47/164/461        223   0.32/1.00     -0.1    63%    48px/69%   38.5   483/567    72    1.9/0.0    0.52
+free = px of water above the bed at 2/4/8 s and end (negative: the bed sticks out) · links at 2/4/8 s and end · cold = beads below 0.483 of 1 · flux = last 4 s mean of (T-0.5)·(-vy) · hotUp = share of hot beads moving up · moved = mean |Δy| and share of beads that travelled > 20 px over the run · stir/rec = links 0.5 s after a splash / 5 s later · up/down = hot beads carried above the bed mid-line and cold ones below it, per second · above = beads whose centre is above the waterline at the end

@@ -120,6 +120,11 @@ function slider(key) {
 	function beadCount() {
 		return Number(elements.stats.textContent.match(/^(\d+) BEADS/)[1]);
 	}
+	/* Test the band gesture on a sparse bed: a random dense deal can cover every
+	   point on the line, so cursor hit-testing should not depend on that lottery. */
+	slide(elements, "fillFraction", 5);
+	slide(elements, "fillFraction", 5, "change");
+	for (let i = 1; i <= 31; i++) sandbox.nextFrame(1600 + i * 12);
 	const beforeCancel = beadCount();
 	elements.c.listeners.pointerdown({ clientX: 0, clientY: 0, pointerId: 1, preventDefault() {} });
 	elements.c.listeners.pointercancel();
@@ -158,6 +163,7 @@ function slider(key) {
 
 	/* settings round trip: Copy must describe the live scene, Paste must apply it, and
 	   Defaults must restore the shipped values */
+	slide(elements, "fillFraction", 40);
 	slide(elements, "fillFraction", 40, "change");
 	elements.copySettings.listeners.click({ currentTarget: elements.copySettings });
 	const copied = JSON.parse(clipboard.text);

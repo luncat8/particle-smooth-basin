@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Hydrogel Basin — guided visual review</title>
+<style>
+	html,body{margin:0;background:#0b1418;color:#d3eaf0;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+	body{padding:16px;max-width:1282px;margin:auto}
+	h1{font-size:15px;letter-spacing:.15em;color:#9fd8e8;margin:0 0 6px}
+	p{margin:6px 0 12px;max-width:100ch}
+	a{color:#a9e2e8}
+	button{padding:7px 11px;background:#17333c;border:1px solid #4c8491;border-radius:4px;color:#e0f5f5;font:inherit;cursor:pointer}
+	button:disabled{opacity:.4;cursor:default}
+	button.selected{background:#30606a;border-color:#b4eeee}
+	button.problem{background:#593638;border-color:#ed9999}
+	.toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:10px 0}
+	#step{border-left:3px solid #7ecbd2;background:#10242d;padding:10px 14px;margin:12px 0}
+	#step h2{font-size:14px;margin:0 0 4px;color:#a9e2e8}
+	#look{color:#f1dfad}
+	textarea{width:min(100%,80ch);box-sizing:border-box;min-height:48px;background:#0e1e26;color:#e4f4f4;border:1px solid #526974;padding:7px;font:inherit}
+	#status,#scale{color:#b2d8df}
+	#status{min-height:20px}
+	#scale.warning{color:#f1c38d}
+	.stage{width:min(1280px, calc(100% - 2px));overflow:hidden;border:1px solid #30505b;background:#10242d}
+	canvas{display:block;transform-origin:top left}
+	ol{padding-left:24px;color:#a9c9d0}
+	ol li{margin:3px 0}
+	ol li.current{color:#f1dfad;font-weight:bold}
+	ol li.issue{color:#f1a5a5}
+	ol li.good{color:#a9eabe}
+	#saveState{font-size:12px;color:#a9eabe}
+</style>
+</head>
+<body>
+<h1>HYDROGEL BASIN · GUIDED VISUAL REVIEW</h1>
+<p>Four short checks on a seeded 1280×800 scene. This is a <strong>human inspection</strong>, separate from the automated timing tests. Keep the tab visible; for band edges judge the canvas at full CSS size (the scale notice below tells you if it is shrunk). <a href="tests.html" id="testsLink">Back to automated tests</a> · <a href="index.html">Open the interactive app</a>.</p>
+<ol id="outline"></ol>
+<div class="toolbar">
+	<button id="start" type="button">Start / restart review</button>
+	<button id="prev" type="button" disabled>← Previous</button>
+	<button id="next" type="button" disabled>Next →</button>
+	<button id="play" type="button" disabled>Play motion</button>
+	<label><input id="hide" type="checkbox" disabled/> Hide beads and bonds (wash only)</label>
+</div>
+<section id="step" aria-live="polite">
+	<h2 id="title">Press Start to prepare the scene</h2>
+	<p id="explain">Rate each step below. Use Previous/Next to compare the same frozen frame at DPR 1 and 2. Playing motion is optional; changing steps pauses it.</p>
+	<p id="look"></p>
+	<div class="toolbar" aria-label="Rate the current visual check">
+		<button id="good" type="button" disabled>Looks right</button>
+		<button id="issue" type="button" disabled>Issue seen</button>
+		<button id="skip" type="button" disabled>Not checked</button>
+	</div>
+	<label for="note">Observation (required if you mark an issue):</label><br/>
+	<textarea id="note" placeholder="e.g. vertical seam at right edge of cold band" disabled></textarea>
+</section>
+<p id="scale"></p>
+<div class="stage" id="stage"><canvas id="c" width="1280" height="800"></canvas></div>
+<div class="toolbar">
+	<button id="save" type="button" disabled>Save review to run log</button>
+	<span id="saveState">Rate all four steps before saving.</span>
+</div>
+<p id="status" role="status">Ready. Start the review whenever you are ready; no visual result is inferred from a perf pass.</p>
+<script src="js/engine.js"></script>
+<script src="js/render.js"></script>
+<script>
+"use strict";
+
+var $ = function (id) { return document.getElementById(id); };
+var canvas = $("c"), ctx = canvas.getContext("2d", { alpha: false });
+var stage = $("stage"), world = null, assets = null, stepIndex = -1, playing = false, playToken = 0;
+var reviewStamp = "", savedText = "", savedPath = "", warming = 480;
+var verdicts = ["", "", "", ""], notes = ["", "", "", ""];
+var sprites = buildSprites(), tempSprites = buildTemperatureSprites();
+var W = 1280, H = 800, SEED = 0x9e3779b9;
+var STEPS = [
+	{ id: "bands", title: "1 · Bands only · heat view · DPR 1", feed: 0, dpr: 1, view: "heat",
+		explain: "The bead write is OFF. Hide beads to see the field without occlusion. This is the reference before moving wakes are introduced.",
+		look: "Look for a smooth cold-blue top and amber floor, a calm neutral middle, and band edges aligned with the dashed markers. No frozen wake or square-cell seams." },
+	{ id: "wakes", title: "2 · Bead feed · heat view · DPR 1", feed: 0.2, dpr: 1, view: "heat",
+		explain: "The shipped feed is ON in a fresh bed dealt with the same seed. Press Play motion briefly to see rising warm trails, then Pause before comparing resolution.",
+		look: "Look for soft warm wakes behind rising beads and a cold shell around the crust. Trails should move with the beads, without hard rectangular cell edges." },
+	{ id: "hires", title: "3 · Same frozen field · heat view · DPR 2", feed: 0.2, dpr: 2, view: "heat",
+		explain: "Only the canvas backing resolution changes from step 2; the bed, heat cells and simulation frame stay fixed. Use Previous/Next to switch back and forth while paused.",
+		look: "Look for new seams, blocky band contours or blurred edges that appear only at DPR 2. Hide beads in both steps to compare the wash itself." },
+	{ id: "beads", title: "4 · Temperature view · DPR 2", feed: 0.2, dpr: 2, view: "temp",
+		explain: "Same frozen bed as step 3, with the app's temperature palette instead of the heat overlay. Optionally play to watch the crust and plumes.",
+		look: "Look for readable cold beads/bonds over the upper bed, hot beads rising from the floor, intact sprite rims and waterline; nothing should disappear or smear." },
+];
+
+function versionFromQuery() {
+	var match = (typeof location !== "undefined" ? location.search : "").match(/[?&]version=([^&]+)/);
+	return match ? decodeURIComponent(match[1]) : "dev";
+}
+var VERSION = versionFromQuery();
+$("testsLink").href = "tests.html?run=0&version=" + encodeURIComponent(VERSION);
+
+function withSeed(seed, body) {
+	var saved = Math.random, rng = seed;
+	Math.random = function () {
+		rng ^= rng << 13; rng ^= rng >>> 17; rng ^= rng << 5;
+		return (rng >>> 0) / 4294967296;
+	};
+	try { return body(); } finally { Math.random = saved; }
+}
+
+function makeWorld(feed) {
+	return withSeed(SEED, function () {
+		var next = createWorld(W, H);
+		setFillFraction(next, 0.7);
+		setTypicalRadius(next, 10);
+		setHeatFeed(next, feed);
+		spawnBed(next);
+		for (var i = 0; i < warming; i++) stepWorld(next, 1 / 60);
+		return next;
+	});
+}
+
+function fit() {
+	var available = stage.clientWidth || W;
+	var scale = Math.min(1, available / W);
+	canvas.style.width = W + "px";
+	canvas.style.height = H + "px";
+	canvas.style.transform = "scale(" + scale + ")";
+	stage.style.height = Math.round(H * scale) + "px";
+	$("scale").textContent = scale < 0.999
+		? "Canvas shown at " + Math.round(scale * 100) + "% CSS size. Widen the window for a 1:1 edge inspection; the backing resolution remains DPR " + (stepIndex < 0 ? "—" : STEPS[stepIndex].dpr) + "."
+		: "Canvas at 1:1 CSS size · backing DPR " + (stepIndex < 0 ? "—" : STEPS[stepIndex].dpr) + ".";
+	$("scale").className = scale < 0.999 ? "warning" : "";
+}
+
+function draw() {
+	if (!world) return;
+	var n = world.n, links = world.linkActiveN;
+	if ($("hide").checked) { world.n = 0; world.linkActiveN = 0; }
+	try { render(ctx, world, assets); }
+	finally { world.n = n; world.linkActiveN = links; }
+}
+
+function stopMotion() {
+	playing = false;
+	playToken++;
+	$("play").textContent = "Play motion";
+}
+
+function playMotion() {
+	if (stepIndex < 0) return;
+	if (playing) { stopMotion(); return; }
+	playing = true;
+	$("play").textContent = "Pause motion";
+	var token = ++playToken, last = performance.now();
+	function frame(now) {
+		if (!playing || token !== playToken) return;
+		stepWorld(world, Math.min(0.05, (now - last) / 1000));
+		last = now;
+		draw();
+		requestAnimationFrame(frame);
+	}
+	requestAnimationFrame(frame);
+}
+
+function updateOutline() {
+	var items = [];
+	for (var i = 0; i < STEPS.length; i++) {
+		var state = verdicts[i];
+		items.push("<li class=\"" + (i === stepIndex ? "current " : "") + (state === "issue" ? "issue" : state === "good" ? "good" : "") + "\">"
+			+ STEPS[i].title + " · " + (state === "good" ? "looks right" : state === "issue" ? "issue seen" : state === "skip" ? "not checked" : "pending") + "</li>");
+	}
+	$("outline").innerHTML = items.join("");
+}
+
+function updateSave() {
+	var rated = verdicts.filter(function (value) { return !!value; }).length;
+	var missingNote = verdicts.some(function (value, i) { return value === "issue" && !notes[i].trim(); });
+	var text = rated === STEPS.length && !missingNote ? reviewText() : "";
+	$("save").disabled = !text || text === savedText;
+	$("save").textContent = text && text === savedText ? "Saved ✓" : "Save review to run log";
+	$("saveState").textContent = rated + "/" + STEPS.length + " rated"
+		+ (missingNote ? " · add a note to each issue" : rated !== STEPS.length ? " · rate all steps to save"
+			: text === savedText ? " · saved to " + savedPath : " · ready to save");
+}
+
+function showStep(index) {
+	if (index < 0 || index >= STEPS.length) return;
+	stopMotion();
+	var previous = stepIndex;
+	stepIndex = index;
+	$("status").textContent = "Preparing step " + (index + 1) + "…";
+	if (!world || index === 0 || previous === 0) world = makeWorld(STEPS[index].feed);
+	setView(world, STEPS[index].view);
+	canvas.width = W * STEPS[index].dpr;
+	canvas.height = H * STEPS[index].dpr;
+	ctx.setTransform(STEPS[index].dpr, 0, 0, STEPS[index].dpr, 0, 0);
+	assets = makeAssets(ctx, world);
+	assets.sprites = sprites;
+	assets.tempSprites = tempSprites;
+	$("hide").disabled = index === 3;
+	if (index === 3) $("hide").checked = false;
+	fit();
+	draw();
+	$("title").textContent = STEPS[index].title;
+	$("explain").textContent = STEPS[index].explain;
+	$("look").textContent = "CHECK: " + STEPS[index].look;
+	$("note").value = notes[index];
+	$("note").disabled = false;
+	$("prev").disabled = index === 0;
+	$("next").disabled = index === STEPS.length - 1;
+	$("play").disabled = index === 0;
+	for (var j = 0; j < 3; j++) $(j === 0 ? "good" : j === 1 ? "issue" : "skip").disabled = false;
+	updateRating();
+	updateOutline();
+	$("status").textContent = "Step " + (index + 1) + "/" + STEPS.length + " ready · simulation paused. Rate it before moving on.";
+}
+
+function updateRating() {
+	$("good").className = verdicts[stepIndex] === "good" ? "selected" : "";
+	$("issue").className = verdicts[stepIndex] === "issue" ? "problem" : "";
+	$("skip").className = verdicts[stepIndex] === "skip" ? "selected" : "";
+}
+
+function start(frames) {
+	stopMotion();
+	warming = typeof frames === "number" ? frames : 480;
+	verdicts = ["", "", "", ""];
+	notes = ["", "", "", ""];
+	world = null;
+	stepIndex = -1;
+	reviewStamp = new Date().toISOString();
+	savedText = "";
+	savedPath = "";
+	$("hide").checked = false;
+	showStep(0);
+	updateSave();
+}
+
+function mark(value) {
+	if (stepIndex < 0) return;
+	verdicts[stepIndex] = value;
+	updateRating();
+	updateOutline();
+	updateSave();
+}
+
+function reviewText() {
+	var lines = ["VISUAL REVIEW " + VERSION + " · " + reviewStamp + " · " + (typeof navigator !== "undefined" ? navigator.userAgent : "browser")
+		+ " · screen DPR " + (window.devicePixelRatio || 1) + " · 1280x800 · seed 0x9e3779b9 · warm " + warming + " frames"];
+	for (var i = 0; i < STEPS.length; i++) {
+		var note = notes[i].replace(/\s+/g, " ").trim();
+		lines.push("visual " + STEPS[i].id + " · DPR " + STEPS[i].dpr + " · feed " + STEPS[i].feed.toFixed(2)
+			+ " · " + (verdicts[i] || "pending") + (note ? " · " + note : ""));
+	}
+	var good = verdicts.filter(function (value) { return value === "good"; }).length;
+	var issues = verdicts.filter(function (value) { return value === "issue"; }).length;
+	var skipped = verdicts.filter(function (value) { return value === "skip"; }).length;
+	lines.push("VISUAL summary · good " + good + "/4 · issues " + issues + " · not checked " + skipped);
+	return lines.join("\n") + "\n";
+}
+
+function download(text) {
+	var link = document.createElement("a");
+	link.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+	link.download = VERSION + "-visual-review.txt";
+	link.click();
+	URL.revokeObjectURL(link.href);
+	return link.download;
+}
+
+async function saveReview() {
+	if (verdicts.some(function (value, i) { return !value || value === "issue" && !notes[i].trim(); })) return null;
+	var text = reviewText();
+	if (text === savedText) return null;
+	$("save").disabled = true;
+	try {
+		if (typeof location !== "undefined" && location.protocol !== "file:" && typeof fetch === "function") {
+			var response = await fetch("__visual", { method: "POST", headers: { "content-type": "text/plain; charset=utf-8" }, body: text });
+			if (!response.ok) throw new Error("server said " + response.status);
+			var info = await response.json();
+			savedPath = info.path;
+			$("status").textContent = info.duplicate ? "Review already saved in " + savedPath : "Review appended to " + savedPath;
+		} else {
+			savedPath = download(text);
+			$("status").textContent = "Review downloaded as " + savedPath + " (no run server)";
+		}
+	} catch (error) {
+		savedPath = download(text);
+		$("status").textContent = "Server unavailable (" + error.message + "); review downloaded as " + savedPath;
+	}
+	savedText = text;
+	updateSave();
+	return savedPath;
+}
+
+$("start").addEventListener("click", function () { start(); });
+$("prev").addEventListener("click", function () { showStep(stepIndex - 1); });
+$("next").addEventListener("click", function () { showStep(stepIndex + 1); });
+$("play").addEventListener("click", playMotion);
+$("hide").addEventListener("change", draw);
+$("good").addEventListener("click", function () { mark("good"); });
+$("issue").addEventListener("click", function () { mark("issue"); });
+$("skip").addEventListener("click", function () { mark("skip"); });
+$("note").addEventListener("input", function () { notes[stepIndex] = $("note").value; updateSave(); });
+$("save").addEventListener("click", saveReview);
+window.addEventListener("resize", fit);
+window.VisualReview = { start: start, go: showStep, mark: mark, report: reviewText, save: saveReview,
+	state: function () { return { step: stepIndex, feed: world ? world.heatFeed : null, dpr: stepIndex < 0 ? null : STEPS[stepIndex].dpr,
+		n: world ? world.n : 0, heat: world ? world.heat.field : null, world: world }; } };
+updateOutline();
+updateSave();
+fit();
+</script>
+</body>
+</html>

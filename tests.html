@@ -10,6 +10,7 @@
 	h1{margin:0;font-size:13px;letter-spacing:.24em;color:#9fd8e8;font-weight:700}
 	p.sub{margin:6px 0 12px;max-width:96ch;font-size:11px;color:rgba(170,215,230,.62)}
 	code{background:rgba(159,216,232,.10);padding:1px 5px;border-radius:3px;color:#bfe9f0}
+	a{color:#a9e2e8}
 	.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px}
 	button{padding:6px 12px;border:1px solid rgba(159,216,232,.3);background:rgba(91,163,177,.13);color:#c6ecf1;font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.08em;cursor:pointer;border-radius:4px}
 	button:hover:not(:disabled){background:rgba(91,190,200,.26);border-color:rgba(159,216,232,.6)}
@@ -48,6 +49,7 @@ are not coarsened. Keep this tab visible: a background tab throttles frames.</p>
 <div class="toolbar">
 	<button id="run" type="button">Run all</button>
 	<button id="quick" type="button">Quick</button>
+	<button id="couplings" type="button">Couplings × scenes</button>
 	<button id="stop" type="button" disabled>Stop</button>
 	<button id="save" type="button">Save log</button>
 	<button id="copy" type="button">Copy log</button>
@@ -55,14 +57,25 @@ are not coarsened. Keep this tab visible: a background tab throttles frames.</p>
 </div>
 <div id="status">booting…</div>
 <p id="env"></p>
+<p class="sub"><strong>Visual check:</strong> automated pixels verify that beads repaint, not whether the heat wash is smooth. After the matrix, open <a id="visualLink" href="visual.html">Guided visual review</a> for four explicit DPR/feed checks and a separate review section in the same run log.</p>
 <div class="stage" id="stage"><canvas id="c" width="640" height="400"></canvas></div>
 <h2>checks</h2>
 <ul id="checks"></ul>
+<section id="profile-section">
 <h2>frame profile (budget 16.7 ms)</h2>
 <table>
 	<thead><tr><th>case</th><th>beads</th><th>dpr</th><th>view</th><th>frame p50</th><th>frame p95</th><th>sim p95</th><th>render p95</th><th>rAF p95</th><th>result</th></tr></thead>
 	<tbody id="rows"></tbody>
 </table>
+</section>
+<section id="coupling-section" hidden>
+<h2>couplings × scenes · seeded, 8 s at 60 Hz</h2>
+<p class="sub">Each scene is dealt from the same seed, then the coupling retunes its live bed. The first row in each group is that scene's untouched baseline. Δ is versus that baseline, not versus the shipped thermal scene. Cold means T &lt; 0.483; links have stiffness ≥ 0.02. This short-run snapshot is not a 20 s balance guarantee. Keep the tab visible for frame times; Stop leaves an incomplete result.</p>
+<table>
+	<thead><tr><th>scene</th><th>coupling</th><th>feed</th><th>beads</th><th>cold (Δ)</th><th>links (Δ)</th><th>mean T (Δ)</th><th>above water</th><th>frame p95</th><th>result</th></tr></thead>
+	<tbody id="coupling-rows"></tbody>
+</table>
+</section>
 <h2>log</h2>
 <pre id="out"></pre>
 <script src="js/engine.js"></script>
@@ -75,6 +88,7 @@ var $ = function (id) { return document.getElementById(id); };
 var canvas = $("c");
 var ctx = canvas.getContext("2d", { alpha: false });
 var stageEl = $("stage"), outEl = $("out"), rowsEl = $("rows"), checksEl = $("checks"), envEl = $("env");
+var couplingRowsEl = $("coupling-rows"), couplingSectionEl = $("coupling-section"), profileSectionEl = $("profile-section");
 var LOG = [];
 var BUSY = false;
 var STOPPED = false;
@@ -111,13 +125,31 @@ var PROFILES = {
 	full: { warm: 45, measure: 150, sizes: ["light", "default", "cap"], variants: ["dpr1", "dpr2", "dpr1-temp"], extras: true },
 	quick: { warm: 20, measure: 90, sizes: ["default"], variants: ["dpr1", "dpr2"], extras: false },
 };
-/* cold/high-link preset, a stirred near-cap scene and the heat-map view at the cap:
-   the three interaction cases */
+/* cold/high-link preset, stirred near-cap and heat-map cap at both DPRs:
+   the interaction and renderer cases */
 var PRESET_CASE = { id: "cold-links", fill: 0.50, radius: 14, dpr: 1, view: "density", preset: [-1, -4], rates: [2, 2], warm: 240, measure: 150 };
 var STIR_CASE = { id: "stirred-cap", fill: 0.70, radius: 10, dpr: 1, view: "density", interaction: true, warm: 60, measure: 120 };
-var HEAT_CASE = { id: "heat cap", fill: 0.70, radius: 10, dpr: 1, view: "heat", warm: 45, measure: 150 };
+var MATRIX_SEED = 0x9e3779b9;
+var HEAT_CASE = { id: "heat cap", fill: 0.70, radius: 10, dpr: 1, view: "heat", warm: 45, measure: 150, seed: MATRIX_SEED };
+var HEAT_DPR2_CASE = { id: "heat cap dpr2", fill: 0.70, radius: 10, dpr: 2, view: "heat", warm: 45, measure: 150, seed: MATRIX_SEED };
 /* the scene the app actually opens with, straight from the engine's settings */
 var SHIPPED_CASE = { id: "shipped", settings: SETTINGS, dpr: 1, view: SETTINGS.view, warm: 90, measure: 150 };
+
+function couplingCases() {
+	var cases = [];
+	for (var i = 0; i < PRESETS.length; i++) {
+		var scene = PRESETS[i];
+		if (scene.kind !== "scene") continue;
+		for (var j = -1; j < PRESETS.length; j++) {
+			var coupling = j < 0 ? null : PRESETS[j];
+			if (coupling && coupling.kind !== "coupling") continue;
+			cases.push({ id: scene.id + " / " + (coupling ? coupling.id : "baseline"), scene: scene.id,
+				coupling: coupling ? coupling.id : "baseline", dpr: 1, view: scene.settings.view,
+				warm: 420, measure: 60 });
+		}
+	}
+	return cases;
+}
 
 /* ---------------------------- log + status ---------------------------- */
 
@@ -141,6 +173,7 @@ function versionFromQuery() {
 }
 
 var VERSION = versionFromQuery();
+$("visualLink").href = "visual.html?version=" + encodeURIComponent(VERSION);
 
 function fileStamp() {
 	var d = new Date(), pad = function (n) { return (n < 10 ? "0" : "") + n; };
@@ -617,6 +650,7 @@ function perfCases(profile) {
 	cases.push(copyCase(PRESET_CASE));
 	cases.push(copyCase(STIR_CASE));
 	cases.push(copyCase(HEAT_CASE));
+	cases.push(copyCase(HEAT_DPR2_CASE));
 	return cases;
 }
 
@@ -643,8 +677,32 @@ function resizeBackingStore(dpr) {
 	fitStage();
 }
 
+function rowVerdict(row) {
+	return row.stopped ? "stopped" : row.invalid ? "invalid state" : row.frame.p95 <= BUDGET_MS ? "within budget" : "over budget";
+}
+
+function addCouplingRow(row, baseline) {
+	var verdict = rowVerdict(row);
+	var delta = function (value, base, digits) {
+		var change = value - base;
+		return (change >= 0 ? "+" : "") + change.toFixed(digits);
+	};
+	var compare = baseline && row !== baseline;
+	var text = "<td>" + row.scene + "</td><td>" + row.coupling + "</td><td>" + row.feed.toFixed(2) + "</td>"
+		+ "<td>" + row.n + "</td><td>" + row.cold + (compare ? " (" + delta(row.cold, baseline.cold, 0) + ")" : "") + "</td>"
+		+ "<td>" + row.links + (compare ? " (" + delta(row.links, baseline.links, 0) + ")" : "") + "</td>"
+		+ "<td>" + row.meanT.toFixed(2) + (compare ? " (" + delta(row.meanT, baseline.meanT, 2) + ")" : "") + "</td>"
+		+ "<td>" + row.above + "</td><td>" + row.frame.p95.toFixed(2) + " ms</td>"
+		+ "<td class=\"" + (verdict === "within budget" ? "ok" : "bad") + "\">" + verdict + "</td>";
+	var tr = document.createElement("tr");
+	tr.innerHTML = text;
+	couplingRowsEl.appendChild(tr);
+	return compare ? " · Δcold " + delta(row.cold, baseline.cold, 0)
+		+ " Δlinks " + delta(row.links, baseline.links, 0) + " ΔT " + delta(row.meanT, baseline.meanT, 2) : "";
+}
+
 function addRow(row) {
-	var verdict = row.stopped ? "stopped" : row.frame.p95 <= BUDGET_MS ? "within budget" : "over budget";
+	var verdict = rowVerdict(row);
 	var text = "<td>" + row.id + "</td>"
 		+ "<td class=\"num\">" + row.n + "</td>"
 		+ "<td class=\"num\">" + row.dpr + "</td>"
@@ -654,10 +712,24 @@ function addRow(row) {
 		+ "<td class=\"num\">" + row.sim.p95.toFixed(2) + "</td>"
 		+ "<td class=\"num\">" + row.render.p95.toFixed(2) + "</td>"
 		+ "<td class=\"num\">" + row.interval.p95.toFixed(2) + "</td>"
-		+ "<td class=\"" + (row.stopped ? "bad" : row.frame.p95 <= BUDGET_MS ? "ok" : "bad") + "\">" + verdict + "</td>";
+		+ "<td class=\"" + (verdict === "within budget" ? "ok" : "bad") + "\">" + verdict + "</td>";
 	var tr = document.createElement("tr");
 	tr.innerHTML = text;
 	rowsEl.appendChild(tr);
+}
+
+function couplingState(world) {
+	var cold = 0, sum = 0, above = 0, invalid = false, links = 0;
+	for (var i = 0; i < world.n; i++) {
+		var t = world.temp[i];
+		if (!isFinite(t) || t < 0 || t > 1 || !isFinite(world.x[i]) || !isFinite(world.y[i])
+			|| !isFinite(world.vx[i]) || !isFinite(world.vy[i])) invalid = true;
+		if (t < 0.483) cold++;
+		if (world.y[i] < world.waterY) above++;
+		sum += t;
+	}
+	for (var k = 0; k < world.linkN; k++) if (world.linkK[k] >= 0.02) links++;
+	return { cold: cold, links: links, meanT: sum / world.n, above: above, invalid: invalid || !isFinite(sum) };
 }
 
 /* One case: build the scene, time stepWorld and render on requestAnimationFrame.
@@ -666,14 +738,20 @@ function runPerfCase(kase, options) {
 	var warm = options && options.warm !== undefined ? options.warm : kase.warm;
 	var measure = options && options.measure !== undefined ? options.measure : kase.measure;
 	return new Promise(function (resolve) {
-		var world = createWorld(VIEW_W, VIEW_H);
-		if (kase.settings) {
-			applySettings(world, kase.settings);
-		} else {
-			setFillFraction(world, kase.fill);
-			setTypicalRadius(world, kase.radius);
+		var world;
+		function deal() {
+			world = createWorld(VIEW_W, VIEW_H);
+			if (kase.scene) applySettings(world, PRESET_BY_ID[kase.scene].settings);
+			else if (kase.settings) applySettings(world, kase.settings);
+			else {
+				setFillFraction(world, kase.fill);
+				setTypicalRadius(world, kase.radius);
+			}
+			spawnBed(world);
+			if (kase.scene && kase.coupling !== "baseline") applySettings(world, PRESET_BY_ID[kase.coupling].settings);
 		}
-		spawnBed(world);
+		if (kase.seed || kase.scene) withSeed(kase.seed || MATRIX_SEED, deal);
+		else deal();
 		if (kase.preset) {
 			setSizeResponse(world, kase.preset[0]);
 			setArchSize(world, kase.preset[1]);
@@ -699,14 +777,20 @@ function runPerfCase(kase, options) {
 			var summary = profiler.count
 				? profiler.summary()
 				: { frames: 0, frame: emptyStats(), sim: emptyStats(), render: emptyStats() };
+			var state = kase.scene ? couplingState(world) : null;
 			row = {
-				id: kase.id, n: world.n, links: world.linkActiveN, dpr: kase.dpr || 1, view: world.view,
+				id: kase.id, scene: kase.scene, coupling: kase.coupling, n: world.n,
+				links: state ? state.links : world.linkActiveN, feed: world.heatFeed,
+				size: world.sizeResponse, arch: world.archSize, buoyancy: world.buoyancy,
+				cold: state ? state.cold : 0, meanT: state ? state.meanT : 0,
+				above: state ? state.above : 0, invalid: state ? state.invalid : false,
+				dpr: kase.dpr || 1, view: world.view,
 				stopped: !!stopped, frames: summary.frames,
 				frame: summary.frame, sim: summary.sim, render: summary.render,
 				interval: intervals.count ? intervals.summary() : emptyStats(),
 			};
-			addRow(row);
-			say("perf " + row.id + " · n=" + row.n + " links=" + row.links + " · frame p50 " + row.frame.p50.toFixed(2)
+			if (!kase.scene) addRow(row);
+			if (!kase.scene) say("perf " + row.id + " · n=" + row.n + " links=" + row.links + " · frame p50 " + row.frame.p50.toFixed(2)
 				+ " p95 " + row.frame.p95.toFixed(2) + " · sim p95 " + row.sim.p95.toFixed(2)
 				+ " · render p95 " + row.render.p95.toFixed(2) + " · rAF p95 " + row.interval.p95.toFixed(2)
 				+ (row.stopped ? " · stopped" : row.frame.p95 <= BUDGET_MS ? "" : " · OVER " + BUDGET_MS + " ms"));
@@ -749,29 +833,40 @@ function runPerfCase(kase, options) {
 }
 
 async function runPerf(cases, options) {
-	var rows = [];
+	var rows = [], baselines = {};
 	for (var i = 0; i < cases.length; i++) {
 		if (STOPPED) break;
 		setStatus("running " + cases[i].id + " (" + (i + 1) + "/" + cases.length + ")…");
-		rows.push(await runPerfCase(cases[i], options));
-		if (rows[rows.length - 1].stopped) break;
+		var row = await runPerfCase(cases[i], options);
+		rows.push(row);
+		if (row.scene) {
+			if (row.coupling === "baseline" && !row.stopped) baselines[row.scene] = row;
+			var change = addCouplingRow(row, baselines[row.scene]);
+			say("coupling " + row.id + " · feed=" + row.feed.toFixed(2) + " n=" + row.n
+				+ " cold=" + row.cold + " links=" + row.links + " meanT=" + row.meanT.toFixed(2)
+				+ " above=" + row.above + change + " · frame p95 " + row.frame.p95.toFixed(2)
+				+ " · sim p95 " + row.sim.p95.toFixed(2) + " · render p95 " + row.render.p95.toFixed(2)
+				+ " · rAF p95 " + row.interval.p95.toFixed(2) + " · " + rowVerdict(row));
+		}
+		if (row.stopped) break;
 	}
 	return rows;
 }
 
 /* ---------------------------- run + report ---------------------------- */
 
-function summarise(checks, rows) {
+function summarise(checks, rows, expected) {
 	var checksPassed = 0, within = 0, worst = null, worstInterval = null;
 	for (var i = 0; i < checks.length; i++) if (checks[i].ok) checksPassed++;
 	for (var j = 0; j < rows.length; j++) {
 		if (rows[j].stopped) continue;
-		if (rows[j].frame.p95 <= BUDGET_MS) within++;
+		if (!rows[j].invalid && rows[j].frame.p95 <= BUDGET_MS) within++;
 		if (!worst || rows[j].frame.p95 > worst.frame.p95) worst = rows[j];
 		if (!worstInterval || rows[j].interval.p95 > worstInterval.interval.p95) worstInterval = rows[j];
 	}
 	var measured = rows.filter(function (row) { return !row.stopped; }).length;
-	var ok = checksPassed === checks.length && within === measured && measured > 0;
+	var complete = expected === undefined || rows.length === expected;
+	var ok = checksPassed === checks.length && within === measured && measured > 0 && complete && !STOPPED;
 	return {
 		ok: ok,
 		checks: checksPassed + "/" + checks.length,
@@ -779,6 +874,7 @@ function summarise(checks, rows) {
 		worst: worst,
 		line: "RESULT " + (ok ? "pass" : "fail") + " · checks " + checksPassed + "/" + checks.length
 			+ " · perf " + within + "/" + measured + " within " + BUDGET_MS + " ms"
+			+ (!complete || STOPPED ? " · incomplete " + rows.length + "/" + (expected || rows.length) : "")
 			+ (worst ? " · worst p95 " + worst.frame.p95.toFixed(2) + " ms (" + worst.id + ")" : "")
 			+ (worstInterval ? " · worst rAF " + worstInterval.interval.p95.toFixed(2) + " ms (" + worstInterval.id + ")" : ""),
 	};
@@ -790,17 +886,22 @@ async function run(profileName, overrides) {
 	STOPPED = false;
 	LOG.length = 0;
 	rowsEl.innerHTML = "";
+	couplingRowsEl.innerHTML = "";
+	couplingSectionEl.hidden = profileName !== "couplings";
+	profileSectionEl.hidden = profileName === "couplings";
 	checksEl.innerHTML = "";
 	outEl.textContent = "";
 	$("run").disabled = true;
 	$("quick").disabled = true;
+	$("couplings").disabled = true;
 	$("stop").disabled = false;
 	var started = performance.now();
 	try {
 		if (!ENV_LINE) say(await envLine());
 		else say(ENV_LINE);
-		var profile = profileName === "quick" ? "quick" : "full";
-		say("browser tests " + VERSION + " · " + stamp() + " · " + profile + " matrix · budget " + BUDGET_MS + " ms/frame");
+		var profile = profileName === "quick" || profileName === "couplings" ? profileName : "full";
+		say("browser tests " + VERSION + " · " + stamp() + " · " + profile + " matrix · budget " + BUDGET_MS + " ms/frame"
+			+ (profile === "couplings" ? " · seed 0x9e3779b9 · 8 s per case" : ""));
 		setStatus("checks…");
 		/* options.checks === false reuses the previous verdict, for a matrix rerun from
 		   a driver that already ran them (a second node sandbox pass) */
@@ -808,8 +909,9 @@ async function run(profileName, overrides) {
 		var checks = reuse ? LAST_CHECKS : runChecks();
 		LAST_CHECKS = checks;
 		setStatus("perf…");
-		var rows = await runPerf(perfCases(profile), overrides);
-		var result = summarise(checks, rows);
+		var cases = profile === "couplings" ? couplingCases() : perfCases(profile);
+		var rows = await runPerf(cases, overrides);
+		var result = summarise(checks, rows, cases.length);
 		say(result.line);
 		say("wall " + ((performance.now() - started) / 1000).toFixed(1) + " s · tab must stay visible for honest frames");
 		VERDICT = (result.ok ? "PASS · " : "FAIL · ") + result.line.replace(/^RESULT \w+ · /, "");
@@ -824,6 +926,7 @@ async function run(profileName, overrides) {
 		BUSY = false;
 		$("run").disabled = false;
 		$("quick").disabled = false;
+		$("couplings").disabled = false;
 		$("stop").disabled = true;
 	}
 }
@@ -944,6 +1047,7 @@ function copyLog() {
 
 $("run").addEventListener("click", function () { run("full"); });
 $("quick").addEventListener("click", function () { run("quick"); });
+$("couplings").addEventListener("click", function () { run("couplings"); });
 $("stop").addEventListener("click", function () { STOPPED = true; setStatus("stopping after the current frame…"); });
 $("save").addEventListener("click", function () { saveLog(); });
 $("copy").addEventListener("click", function () { copyLog(); });
@@ -955,6 +1059,7 @@ var Harness = {
 	env: envLine,
 	checks: runChecks,
 	perfCases: perfCases,
+	couplingCases: couplingCases,
 	runPerf: runPerf,
 	summarise: summarise,
 	run: run,

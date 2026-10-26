@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Double-click me: node checks, then the browser tests, on one local server and one log.
+"""Double-click me: node checks, browser tests and optional visual review in one log.
 
     Starts a local HTTP server for this directory and opens tests.html in the default
     browser. Two phases land in the same timestamped log under experiments/logs/:
@@ -7,10 +7,11 @@
       1. node checks - experiments/smoke.js, experiments/thermal.js, experiments/bench.js,
          experiments/thermal-zone.js (zone geometry and rate sweep), experiments/heat-feed.js
          (two-way heat drift and cost), experiments/settings.js (the copy/paste settings
-         round trip) and experiments/harness.js (the tests.html
-         lint). Echoed and written as they run.
+         round trip), experiments/harness.js (the tests.html lint) and
+         experiments/visual.js (the guided review wiring). Echoed and written as they run.
       2. browser tests - tests.html runs its checks and the frame-profile matrix, then
-         POSTs its log to this server, which appends it to the same file. The page also
+         POSTs its log to this server, which appends it to the same file. visual.html
+         offers a separate human checklist, appended only after the user rates and saves it. The page also
          has Save log (same append) and Copy log, and it refuses to send the same log
          twice: the button turns into a "Saved" state, and the server rejects an
          identical section should one arrive anyway (a second tab, a stale page).
@@ -56,11 +57,11 @@ LOG_DIR = ROOT / "experiments" / "logs"
 VERSION_FILE = ROOT / "VERSION"
 NODE_CHECKS = ["experiments/smoke.js", "experiments/thermal.js", "experiments/bench.js",
                "experiments/thermal-zone.js", "experiments/heat-feed.js", "experiments/settings.js",
-               "experiments/harness.js"]
+               "experiments/harness.js", "experiments/visual.js"]
 MAX_POST = 2 * 1024 * 1024
 LOOPBACK = {"127.0.0.1", "::1"}
 
-STATE = {"log": None, "browser_written": False, "result": "", "last_body": None}
+STATE = {"log": None, "browser_written": False, "result": "", "last_body": None, "last_visual_body": None}
 LOG_LOCK = threading.Lock()
 
 
@@ -112,7 +113,7 @@ def url_host(host):
 
 
 class TestsHandler(SimpleHTTPRequestHandler):
-    """Static files with cross-origin isolation, plus POST /__log for the page."""
+    """Static files with cross-origin isolation, plus separate test/review log posts."""
 
     def __init__(self, *args, directory=None, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
@@ -134,8 +135,9 @@ class TestsHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self):
-        if self.path.split("?")[0] != "/__log":
-            self.send_error(404, "only POST /__log is accepted")
+        route = self.path.split("?")[0]
+        if route not in ("/__log", "/__visual"):
+            self.send_error(404, "only POST /__log and /__visual are accepted")
             return
         if self.server.server_address[0] in LOOPBACK and self.client_address[0] not in LOOPBACK:
             self.send_error(403, "log writes are limited to this machine")
@@ -149,19 +151,23 @@ class TestsHandler(SimpleHTTPRequestHandler):
             self.send_error(409, "no run log is open")
             return
         relative = str(STATE["log"].relative_to(ROOT))
+        visual = route == "/__visual"
+        last_key = "last_visual_body" if visual else "last_body"
+        heading = "visual review (visual.html)" if visual else "browser tests (tests.html)"
         with LOG_LOCK:
-            # One section per distinct run: a second tab, a stale page or a double POST
-            # must not paste the same numbers in twice.
-            duplicate = body == STATE["last_body"]
+            # Reviews are separate sections: changing a verdict never reposts the
+            # already-saved perf matrix, and duplicates of either section are ignored.
+            duplicate = body == STATE[last_key]
             if not duplicate:
-                STATE["last_body"] = body
+                STATE[last_key] = body
                 with open(STATE["log"], "a", encoding="utf-8", errors="replace", newline="\n") as handle:
-                    handle.write("\n--- browser tests (tests.html) ---\n" + body.rstrip("\n") + "\n")
-                STATE["browser_written"] = True
-                for line in reversed(body.splitlines()):
-                    if line.startswith("RESULT "):
-                        STATE["result"] = line
-                        break
+                    handle.write("\n--- " + heading + " ---\n" + body.rstrip("\n") + "\n")
+                if not visual:
+                    STATE["browser_written"] = True
+                    for line in reversed(body.splitlines()):
+                        if line.startswith("RESULT "):
+                            STATE["result"] = line
+                            break
         payload = json.dumps({"saved": not duplicate, "duplicate": duplicate, "path": relative}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -275,9 +281,10 @@ def main(argv):
     page_url = "http://" + host + ":" + str(port) + "/tests.html?version=" + version()
     print("\nserver: " + "http://" + options["host"] + ":" + str(port) + "/  (isolated: COOP/COEP + no-store)")
     print("tests:  " + page_url)
+    print("visual: " + "http://" + host + ":" + str(port) + "/visual.html?version=" + version())
     print("app:    " + "http://" + host + ":" + str(port) + "/index.html")
     print("log:    " + str(log_path.relative_to(ROOT)))
-    print("the page appends its browser section to that log when a run finishes (Save log re-sends it)")
+    print("tests and the separate guided visual review append to this log when saved")
     if options["host"] not in LOOPBACK:
         print("warning: bound to " + options["host"] + " - any client that can reach the port may append to the log")
     if options["open"]:

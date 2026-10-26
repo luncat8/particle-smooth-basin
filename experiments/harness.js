@@ -100,6 +100,8 @@ function waitFor(predicate, label, timeoutMs) {
 	await waitFor(() => sandbox.window.__ready === true, "window.__ready");
 	const harness = sandbox.window.Harness;
 	assert.ok(harness, "tests.html exposes window.Harness");
+	assert.equal(sandboxHost.elements.visualLink.href, "visual.html?version=0.3.2",
+		"the visual review link carries the run-log version");
 
 	const env = await harness.env();
 	assert.match(env, /node|browser/, "environment line names the browser family");
@@ -119,15 +121,31 @@ function waitFor(predicate, label, timeoutMs) {
 	const quick = harness.perfCases("quick");
 	const full = harness.perfCases("full");
 	assert.equal(quick.map(item => item.id).join(","), "shipped,default dpr1,default dpr2", "quick matrix");
-	assert.equal(full.length, 13, "full matrix is the shipped scene, 3 sizes x 3 variants and 3 extra cases");
+	assert.equal(full.length, 14, "full matrix is the shipped scene, 3 sizes x 3 variants and 4 extra cases");
 	assert.equal(quick[0].id, "shipped", "the quick run starts by measuring the shipped scene");
 	assert.ok(full.some(item => item.id === "shipped" && item.settings && item.settings.fill > 0),
 		"the matrix measures the scene the app opens with");
 	assert.ok(full.some(item => item.id === "cap dpr1-temp"), "full matrix carries the temperature view at the cap");
 	assert.ok(full.some(item => item.id === "cold-links") && full.some(item => item.id === "stirred-cap"),
 		"full matrix carries the preset and stirred cases");
-	assert.ok(full.some(item => item.id === "heat cap" && item.view === "heat"),
-		"full matrix measures the heat-map view at the cap");
+	const heatCases = full.filter(item => item.id === "heat cap" || item.id === "heat cap dpr2");
+	assert.equal(heatCases.length, 2, "paired heat-map cap cases");
+	assert.equal(heatCases.map(item => item.dpr).join(","), "1,2", "heat view is measured at DPR 1 and 2");
+	assert.ok(heatCases.every(item => item.view === "heat" && item.seed === heatCases[0].seed && item.seed),
+		"DPR comparison uses the same seeded deal and view");
+	const matrix = harness.couplingCases();
+	const presets = require("../js/engine.js").PRESETS;
+	const scenes = presets.filter(preset => preset.kind === "scene");
+	const couplings = presets.filter(preset => preset.kind === "coupling");
+	assert.equal(matrix.length, scenes.length * (couplings.length + 1), "one baseline and six couplings per scene");
+	for (const scene of scenes) {
+		const group = matrix.filter(item => item.scene === scene.id);
+		assert.equal(group[0].coupling, "baseline", "the scene baseline comes first");
+		assert.equal(group.slice(1).map(item => item.coupling).join(","), couplings.map(item => item.id).join(","),
+			"couplings come from the engine's preset list, not a parallel hard-coded table");
+		assert.ok(group.every(item => item.warm + item.measure === 480 && item.view === scene.settings.view),
+			"matrix samples each scene at 8 s in its own view");
+	}
 	assert.equal(full.filter(item => item.view === "temp").length, 4,
 		"the shipped case and the three temperature variants draw the temperature view");
 
@@ -140,6 +158,12 @@ function waitFor(predicate, label, timeoutMs) {
 	assert.ok(Number.isFinite(row.frame.p50) && Number.isFinite(row.frame.p95), "frame percentiles are numbers");
 	assert.ok(row.frame.p95 >= row.frame.p50, "p95 is not below p50");
 	assert.ok(row.sim.p95 >= 0 && row.render.p95 >= 0 && row.interval.p95 >= 0, "stage percentiles are non-negative");
+	const heatRows = await harness.runPerf(heatCases, { warm: 2, measure: 3 });
+	assert.equal(heatRows.map(item => item.dpr).join(","), "1,2", "both heat cap paths run");
+	assert.equal(heatRows[0].n, 1500, "the paired heat view runs at the bead cap");
+	assert.equal(heatRows[0].links, heatRows[1].links,
+		"the same seeded heat world reaches the same link count at both DPRs");
+	assert.equal(heatRows[0].feed, heatRows[1].feed, "DPR cannot change heat feed");
 
 	const passing = harness.summarise(checks, rows);
 	assert.ok(passing.ok, "summary passes when every check and case is inside budget");
@@ -188,6 +212,41 @@ function waitFor(predicate, label, timeoutMs) {
 	assert.equal(captured.lines.filter(line => line.startsWith("[log] appended")).length, 1, "only the first section was appended");
 	assert.equal(captured.lines[0], "booting…", "the page's own console lines are captured, not printed");
 	assert.ok(captured.lines.some(line => /^browser · /.test(line)), "the captured output carries the environment line");
+
+	/* Exercise the optional matrix through run(), including scene-specific feed,
+	   seeded re-deals, grouped baseline deltas, and the saved log path. Timing is
+	   still browser-only; these deliberately short rows check wiring, not balance. */
+	duplicateNext = false;
+	sandboxHost.elements.auto.checked = false;
+	const matrixRun = await harness.run("couplings", { warm: 1, measure: 2, checks: false });
+	assert.ok(matrixRun, "matrix run returns a report");
+	assert.equal(matrixRun.rows.length, matrix.length, "every scene/coupling row ran");
+	assert.equal(sandboxHost.elements["coupling-section"].hidden, false, "matrix table is visible");
+	assert.equal(sandboxHost.elements["profile-section"].hidden, true, "ordinary perf table is hidden during matrix runs");
+	assert.equal(captured.lines.filter(line => line.startsWith("coupling ")).length, matrix.length,
+		"matrix logs one row per combination");
+	for (const scene of scenes) {
+		const group = matrixRun.rows.filter(row => row.scene === scene.id);
+		assert.equal(group[0].coupling, "baseline");
+		assert.ok(group.every(row => row.n === group[0].n && row.feed === scene.settings.feed && !row.invalid),
+			"couplings preserve " + scene.id + "'s bed size and feed with finite temperatures");
+		for (const coupling of couplings) {
+			const row = group.find(item => item.coupling === coupling.id);
+			assert.equal(row.size, coupling.settings.size, "size retuned on " + scene.id + "/" + coupling.id);
+			assert.equal(row.arch, coupling.settings.arch, "Archimedes retuned on " + scene.id + "/" + coupling.id);
+			assert.equal(row.buoyancy, coupling.settings.buoyancy, "buoyancy retuned on " + scene.id + "/" + coupling.id);
+		}
+	}
+	const repeat = (await harness.runPerf([matrix[0]], { warm: 1, measure: 2 }))[0];
+	assert.equal(repeat.meanT, matrixRun.rows[0].meanT, "the seeded baseline deals and evolves identically on a rerun");
+	assert.equal(repeat.links, matrixRun.rows[0].links, "the seeded baseline bonds are reproducible");
+	assert.match(sandboxHost.elements.out.textContent, /coupling heat \/ baseline · feed=0\.05/);
+	assert.match(sandboxHost.elements.out.textContent, /coupling thermal \/ shrinkFlow · feed=0\.20.*Δcold/);
+	assert.match(sandboxHost.elements.out.textContent, /RESULT (pass|fail) · checks 9\/9 · perf \d+\/35 within/);
+	assert.equal(posted.length, 2, "autosave disabled for the matrix sandbox run");
+	const incomplete = harness.summarise(checks, matrixRun.rows.slice(0, 2), matrix.length);
+	assert.equal(incomplete.ok, false, "a partial matrix is never a passing run");
+	assert.match(incomplete.line, /incomplete 2\/35/);
 
 	console.log("harness lint: tests.html script compiles, "
 		+ markupIds.size + " element ids, " + wanted.size + " referenced ids present, "

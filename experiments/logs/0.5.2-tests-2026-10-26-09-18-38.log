@@ -1,0 +1,124 @@
+hydrogel basin tests 0.5.2 · 2026-10-26 09:18 · node 22.15.1 · win x86_64
+
+> node experiments/smoke.js
+settings {"fill":0.4,"radius":14,"water":0.3,"coldEnd":0.3,"hotStart":0.75,"coldPower":0.7,"hotPower":2,"lift":0.3,"bonds":0.4,"bondTemp":2.5,"conduction":0.25,"feed":0.2,"size":-1,"arch":-10,"buoyancy":0.2,"mass":1,"view":"temp"}
+AssertionError [ERR_ASSERTION]: somewhere along the cold line is clear of beads
+    at main (experiments\smoke.js:138:9)
+    at Object.<anonymous> (experiments\smoke.js:236:3)
+    at Module._compile (node:internal/modules/cjs/loader:1730:14)
+    at Object..js (node:internal/modules/cjs/loader:1895:10)
+    at Module.load (node:internal/modules/cjs/loader:1465:32)
+    at Function._load (node:internal/modules/cjs/loader:1282:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:170:5)
+    at node:internal/main/run_main_module:36:49 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '=='
+}
+  FAILED exit 1 · 0.3 s
+
+> node experiments/thermal.js
+thermal checks: rates, sizing, buoyancy, size coupling, thawing links, pointer, wave steps, coverage and the heat feed passed
+  ok · 0.1 s
+
+> node experiments/bench.js
+0.2.3 review bench  node=v22.15.1  1280x800  seeded
+n=648  rBar=14.0
+throughput: 0.52 ms/frame (1941 fps headroom) at 3600 frames / 60 s sim
+after settle: NaN=0  max|v|=538  mean|v|=72.1
+distribution: above line=114  fully submerged=481  mean sub. frac=0.78
+pairs: max per substep=1650  (buffer cap=12000)
+links: max effective=366  max cold=986  (buffer cap=12000)
+submergedFrac: f(0)=0.5 f(full)=1 f(none)=0 f(q=-.5)=0.1955  ok=true
+after splash: NaN=0  max|v|=415
+arch-size stress (a=10, size=-1, buoyancy=1.5): NaN=0  max|v|=177
+profile near-cap: n=1500  1.13 ms/frame  peak pairs=3800  peak links=359 / 12000
+equilibrium: dens=0.5 -> frac=0.500 (want ~0.500)   dens=2.0 -> frac=1.000 (want 1.000, on floor)
+  ok · 2.9 s
+
+> node experiments/thermal-zone.js
+thermal zone sweep · 1280x800 · 480 frames · shipped scene · source 1x · conduction 0.25x · seeded
+candidate           links avg/max  cold   coldBonds  churn  Tmin/mean/max     top/bottom   stir   recover  maxV  ms/frame
+old 0.24            0/0            101    0          0.0    0.35/0.77/1.00    0.50/0.95    7      61       593   0.58
+cold 0.36           130/212        187    25         13.0   0.24/0.75/1.00    0.39/1.00    227    137      72    0.55
+shipped             36/65          147    8          4.3    0.26/0.77/1.00    0.34/0.98    74     100      138   0.52
+cold 0.44           270/343        210    2          17.6   0.19/0.74/1.00    0.39/1.00    356    312      25    0.56
+cold 0.48           361/436        220    16         19.9   0.22/0.73/1.00    0.35/1.00    441    346      28    0.56
+cold 0.44 hot 0.70  257/294        149    7          16.1   0.22/0.81/1.00    0.39/1.00    285    151      112   0.55
+cold 0.40 hot 0.70  184/228        139    12         12.4   0.21/0.82/1.00    0.62/1.00    227    108      579   0.54
+cold 0.44 hot 0.82  281/372        257    5          19.5   0.19/0.67/1.00    0.38/0.97    392    440      38    0.56
+cold = beads able to bond (T<0.483) · coldBonds = links whose pair mean T<0.3 · churn = mean |Δlinks| per 30-frame sample · stir = links 0.5 s after a splash
+
+source rate at the shipped bands (cold 0.3 / hot 0.75, both offsets scaled)
+candidate           links avg/max  cold   coldBonds  churn  Tmin/mean/max     top/bottom   stir   recover  maxV  ms/frame
+rate 0x             0/0            0      0          0.0    0.50/0.50/0.50    0.50/0.50    0      0        29    0.53
+rate 0.5x           28/65          116    0          4.1    0.32/0.71/1.00    0.39/0.92    65     97       179   0.52
+rate 1x             36/65          147    8          4.3    0.26/0.77/1.00    0.34/0.98    74     100      138   0.52
+rate 2x             229/276        118    31         12.3   0.23/0.81/1.00    0.82/0.91    202    221      574   0.55
+rate 4x             311/357        129    194        11.4   0.11/0.82/1.00    0.70/0.93    315    242      998   0.56
+rate 0x must leave the bed neutral (no bonds): the source is the only way a bead leaves T=0.5
+  ok · 5.8 s
+
+> node experiments/heat-feed.js
+heat feed sweep · 1280x800 · 15 s · seed 0x9e3779b9 · shipped settings
+scene       feed  meanT 5/10/end    cold  links  top/bottom   up/down   |f-band|  written  clamped  f min/max    ms/frame
+thermal     0.00    0.70/0.75/0.81    82    20     0.82/0.89    9.3/0.3   0.000     0%       0%       0.03/0.98    0.49
+thermal     own 0.200.71/0.78/0.82    67    63     0.71/0.98    32.1/0.2  0.014     0%       0%       0.03/0.98    0.54
+heat        0.00    0.57/0.60/0.63    119   161    0.57/0.72    38.6/4.6  0.000     0%       0%       0.03/0.98    0.33
+heat        own 0.050.57/0.60/0.60    143   272    0.51/0.56    36.4/5.3  0.002     0%       0%       0.03/0.98    0.37
+thermalGrow 0.00    0.48/0.43/0.40    459   1171   0.34/0.59    16.4/17.4 0.000     0%       0%       0.02/0.98    0.45
+thermalGrow own 0.100.48/0.40/0.39    457   1177   0.33/0.61    19.2/22.1 0.006     0%       0%       0.02/0.98    0.51
+balanced    0.00    0.59/0.63/0.62    321   905    0.12/0.79    7.4/15.9  0.000     0%       0%       0.02/0.98    0.85
+balanced    own 0.100.59/0.64/0.65    301   839    0.20/0.76    12.3/17.1 0.010     0%       0%       0.02/0.98    0.90
+sparseRaft  0.00    0.47/0.45/0.49    188   449    0.18/1.00    13.5/5.8  0.000     0%       0%       0.01/0.97    0.18
+sparseRaft  own 0.150.48/0.44/0.50    189   451    0.17/1.00    14.3/5.8  0.005     0%       0%       0.01/0.97    0.23
+meanT = mean bead temperature at 5/10/end s · cold = beads below 0.483 · links = effective bonds · up/down = hot beads carried above the bed mid-line and cold ones below it, per second · |f-band| = mean cell distance from the band target · written = cells carried > 0.1 away · clamped = cells sitting on 0 or 1 · f min/max = the field's range
+heat feed checks: 5 scenes · worst drift 0.031 · crust keeps 82% of its cold beads · worst cost +0.05 ms/frame · feed 0 is the bands-only field · passed
+  ok · 5.0 s
+
+> node experiments/settings.js
+settings checks: round trip, partial paste, unknown keys, clamping, live fields, view mode, presets, heat map geometry, 10 s stability, preset overturning and the heat feed passed
+  ok · 4.6 s
+
+> node experiments/harness.js
+checks: boot=ok · canvas=ok · invariants=ok · interaction=ok · resize=ok · thermal=ok · thermal-zone=ok · heat-feed=ok · profile=ok
+harness lint: tests.html script compiles, 17 element ids, 17 referenced ids present, 9 checks and 1 perf case ran in the sandbox
+sandbox page path: quick run in 6.3 s · saved once · second Save posts nothing · duplicate response accepted as saved
+checks: boot=ok canvas=ok invariants=ok interaction=ok resize=ok thermal=ok thermal-zone=ok heat-feed=ok profile=ok
+thermal zone: cold 147/648 · 65 bonds · top 0.33 bottom 0.98 · 5 above water · bed top 254 px
+perf row: shipped n=648 frames=5 frame p50 4.70 p95 8.17 · sim p95 7.34 · render p95 0.83
+not validated here: canvas pixels and real frame times — open tests.html for those
+  ok · 11.9 s
+
+--- browser tests (tests.html) ---
+chrome 151 · win x86_64 · dpr 1.25 · hw 20 · gpu nvidia · webgpu nvidia · isolated yes · timer 5.0 us
+browser tests 0.5.2 · 2026-10-26 09:19 · full matrix · budget 16.7 ms/frame
+check boot ok · n=648 · wave 161 cols · tank 1139 px
+check canvas ok · beads repaint 31.3% of 480x320 pixels
+check invariants ok · 120 frames · peak pairs 1563 / links 17 within 12000 · no NaN
+check interaction ok · click +1 bead · cancel +0 · drag 135 px · splash h 26.0
+check resize ok · 700x420@2x → 186 beads, restored n=648 at 1280x800
+check thermal ok · temp 0.19-1.00 · r 8.4-25.2 · hot/cold size 9.9/16.8
+check thermal-zone ok · cold 148/648 · 66 bonds · top 0.33 bottom 0.98 · 5 above water · bed top 255 px
+check heat-feed ok · feed 0 0.50 · hot 0.74 · cold 0.26 · field bounded
+check profile ok · one report at 5 frames · p50 3.00 p95 5.00
+perf shipped · n=648 links=23 · frame p50 1.12 p95 1.24 · sim p95 0.71 · render p95 0.55 · rAF p95 5.61
+perf light dpr1 · n=302 links=24 · frame p50 0.64 p95 0.97 · sim p95 0.46 · render p95 0.48 · rAF p95 5.61
+perf light dpr2 · n=302 links=19 · frame p50 0.60 p95 0.75 · sim p95 0.42 · render p95 0.33 · rAF p95 5.62
+perf light dpr1-temp · n=302 links=32 · frame p50 0.61 p95 1.05 · sim p95 0.48 · render p95 0.60 · rAF p95 5.62
+perf default dpr1 · n=810 links=417 · frame p50 1.38 p95 1.56 · sim p95 0.90 · render p95 0.67 · rAF p95 5.60
+perf default dpr2 · n=810 links=401 · frame p50 1.42 p95 1.55 · sim p95 0.89 · render p95 0.65 · rAF p95 5.60
+perf default dpr1-temp · n=810 links=416 · frame p50 1.38 p95 1.66 · sim p95 1.04 · render p95 0.64 · rAF p95 5.60
+perf cap dpr1 · n=1500 links=573 · frame p50 2.38 p95 2.55 · sim p95 1.45 · render p95 1.12 · rAF p95 5.59
+perf cap dpr2 · n=1500 links=570 · frame p50 2.39 p95 2.56 · sim p95 1.46 · render p95 1.11 · rAF p95 5.59
+perf cap dpr1-temp · n=1500 links=577 · frame p50 2.37 p95 2.49 · sim p95 1.44 · render p95 1.08 · rAF p95 5.59
+perf cold-links · n=810 links=589 · frame p50 1.44 p95 1.49 · sim p95 0.84 · render p95 0.66 · rAF p95 5.60
+perf stirred-cap · n=1500 links=1338 · frame p50 2.57 p95 2.67 · sim p95 1.57 · render p95 1.12 · rAF p95 5.59
+perf heat cap · n=1500 links=586 · frame p50 2.46 p95 2.55 · sim p95 1.47 · render p95 1.09 · rAF p95 5.59
+perf heat cap dpr2 · n=1500 links=586 · frame p50 2.52 p95 2.60 · sim p95 1.52 · render p95 1.11 · rAF p95 5.59
+RESULT pass · checks 9/9 · perf 14/14 within 16.7 ms · worst p95 2.67 ms (stirred-cap) · worst rAF 5.62 ms (light dpr2)
+wall 17.0 s · tab must stay visible for honest frames

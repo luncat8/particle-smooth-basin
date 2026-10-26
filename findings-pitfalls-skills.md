@@ -162,7 +162,10 @@
 - a scene check that deals an unseeded bed flakes: one seed in three laid a bed that
   never reached the cold band, and the failure looks exactly like a regression. Seed the
   harness check (`withSeed`) the way the experiments already do, and keep the seed in
-  the log so two runs can be compared.
+  the log so two runs can be compared. A seed matches the *deal*, not exact late-stage
+  bond counts across runtimes: at 8 s the 0.5.1 browser matrix's `heat` baseline had
+  311 links against 203 in a separate Node sweep of the same scene/seed. Use relative
+  trends and browser-to-browser comparisons, not cross-runtime exact link assertions.
 
 ## scene balance
 
